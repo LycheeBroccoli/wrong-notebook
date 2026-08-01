@@ -79,9 +79,13 @@ const httpsServer = https.createServer(options, (req, res) => {
         }
     });
 
-    // 客户端断开连接时，终止代理请求
-    req.on('close', () => {
-        proxyReq.destroy();
+    // 客户端异常断开：通过 res 的 'close' 事件检测（在响应已开始之后才触发）。
+    // 注意：不能用 req 的 'close' 事件——它对无 body 的 GET 也会在收到上游响应前触发，
+    // 若此时 destroy 上游请求会导致 socket hang up / 502。
+    res.on('close', () => {
+        if (!res.writableEnded) {
+            proxyReq.destroy();
+        }
     });
 
     // 将请求体转发到代理

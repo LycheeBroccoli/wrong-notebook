@@ -71,6 +71,7 @@
     "jsdom": "^27.2.0",
     "lucide-react": "^0.555.0",
     "prisma": "5.22.0",
+    "selfsigned": "^5.5.0",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4",
     "tailwindcss-animate": "^1.0.7",
