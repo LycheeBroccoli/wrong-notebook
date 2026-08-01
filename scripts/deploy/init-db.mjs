@@ -15,14 +15,11 @@ function run(cmd, label) {
 // 1. 应用迁移（自动创建 dev.db）
 run('npx prisma migrate deploy', '应用数据库迁移');
 
-// 2. admin 存在性检查
+// 2. admin 存在性检查（通过独立助手脚本 spawn，避免内联 node -e 的 shell 转义问题）
 console.log(`[init-db] 检查管理员 ${adminEmail} 是否存在...`);
 let adminExists = false;
 try {
-    const check = execSync(
-        `node -e "const {PrismaClient}=require('@prisma/client');(async()=>{const p=new PrismaClient();const u=await p.user.findUnique({where:{email:'${adminEmail}'}});console.log(u?'EXISTS':'NOT_EXISTS');await p.\\$disconnect();})()"`,
-        { encoding: 'utf8' }
-    );
+    const check = execSync('node scripts/deploy/check-admin.mjs', { encoding: 'utf8' });
     adminExists = check.includes('EXISTS');
 } catch (e) {
     console.error('[init-db] admin 检查失败，将执行 seed 以确保管理员存在：', e.message);
