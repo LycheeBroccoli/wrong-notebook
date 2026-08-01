@@ -3,7 +3,7 @@
 import { execSync } from 'node:child_process';
 import { config } from 'dotenv';
 
-config(); // 加载 .env
+config({ quiet: true }); // 加载 .env（quiet 抑制日志）
 
 const adminEmail = 'admin@localhost';
 
@@ -20,7 +20,8 @@ console.log(`[init-db] 检查管理员 ${adminEmail} 是否存在...`);
 let adminExists = false;
 try {
     const check = execSync('node scripts/deploy/check-admin.mjs', { encoding: 'utf8' });
-    adminExists = check.includes('EXISTS');
+    // 用严格相等而非 includes：'NOT_EXISTS' 也包含子串 'EXISTS'，会导致永远判定为存在、跳过 seed。
+    adminExists = check.trim() === 'EXISTS';
 } catch (e) {
     console.error('[init-db] admin 检查失败，将执行 seed 以确保管理员存在：', e.message);
 }
