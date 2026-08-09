@@ -24,6 +24,14 @@ export default function LatexTestPage() {
         {
             title: "您的实际答案格式",
             content: "(1) $a = -12$, $b = 8$, $c = 16$ (2) $@t = 12$ (3) $M = \\frac{72}{11}$"
+        },
+        {
+            title: "\\neq 等以 \\n 开头的命令（行内）",
+            content: "已知 $a+b+c \\neq 0$，且 $\\nabla f$、$\\neg A$、$a \\ne b$、$\\nu$、$x \\notin S$ 均有定义。"
+        },
+        {
+            title: "\\neq 等命令（块级 + 行内混合，回归 4.2 整段崩塌）",
+            content: "#### 情况一：当 $a+b+c\\neq0$ 时\n\n因为 $a+b+c \\neq 0$，得：\n\n$$b+c-a = -2a \\neq 0 \\implies a \\neq 0$$\n\n同理 $b \\neq 0$ 且 $c \\neq 0$。"
         }
     ];
 

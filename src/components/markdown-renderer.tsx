@@ -14,8 +14,10 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
     // Preprocess content to ensure proper paragraph breaks and LaTeX rendering
     // Convert single line breaks to double line breaks for better readability
     const processedContent = content
-        // First, convert literal \n sequences to actual newlines (fix for AI responses)
-        .replace(/\\n/g, '\n')
+        // Convert literal \n sequences to actual newlines (fix for AI responses)
+        // Only convert when NOT followed by a letter, so LaTeX commands beginning
+        // with \n (\neq, \nabla, \ne, \neg, \newline, \nonumber, \nu, \notin) are preserved.
+        .replace(/\\n(?![A-Za-z])/g, '\n')
         // Preserve existing double line breaks with a unique marker
         .replace(/\n\n/g, '\n\n###PRESERVE_BREAK###\n\n')
         // Convert patterns that should be new paragraphs
