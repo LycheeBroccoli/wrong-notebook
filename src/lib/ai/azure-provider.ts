@@ -1,6 +1,7 @@
 import { AzureOpenAI } from "openai";
 import { AIService, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult } from "./types";
 import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateReanswerPrompt, generateGeogebraPrompt } from './prompts';
+import { parseGeogebraResponse } from './geogebra-commands';
 import { getAppConfig } from '../config';
 import { safeParseParsedQuestion } from './schema';
 import { getMathTagsFromDB, getTagsFromDB } from './tag-service';
@@ -400,29 +401,9 @@ Knowledge Points: ${knowledgePoints.join(", ")}
             const text = response.choices[0]?.message?.content || '';
             logger.debug({ rawResponse: text }, 'GeoGebra AI raw response');
 
-            if (!text) throw new Error("Empty response from AI");
-
-            // Extract JSON from response (handle possible markdown code blocks)
-            let jsonStr = text.trim();
-            const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-            if (jsonMatch) {
-                jsonStr = jsonMatch[1].trim();
-            }
-
-            // Try to find JSON object
-            const objStart = jsonStr.indexOf('{');
-            const objEnd = jsonStr.lastIndexOf('}');
-            if (objStart !== -1 && objEnd !== -1) {
-                jsonStr = jsonStr.substring(objStart, objEnd + 1);
-            }
-
-            const parsed = JSON.parse(jsonStr);
-
-            return {
-                suitable: Boolean(parsed.suitable),
-                commands: Array.isArray(parsed.commands) ? parsed.commands : [],
-                description: parsed.description || "",
-            };
+            // parseGeogebraResponse 抽取 JSON + 跑 normalizeGeogebraCommands 兜底
+            // （补全 setLabelVisible/setAxisLabels/setAxisSteps）。
+            return parseGeogebraResponse(text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during GeoGebra analysis');
             this.handleError(error);

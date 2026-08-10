@@ -566,6 +566,8 @@ export const DEFAULT_GEOGEBRA_PROMPT = `【角色与核心任务 (ROLE AND CORE 
 - setCoordSystem(-10, 10, -10, 10)  -- 设置坐标范围
 - setAxesVisible(true, true)  -- 显示/隐藏坐标轴
 - setGridVisible(true)  -- 显示/隐藏网格
+- setAxisLabels(1, "x", "y", "")  -- 设轴名（第一参数 viewNumber=1，必填）
+- setAxisSteps(1, 1, 1, 1)  -- 设刻度间距为 1（默认 2 不对，必填）
 - setColor("对象名", R, G, B)  -- 设置颜色 (0-255)
 - setLineThickness("对象名", 3)  -- 设置线宽
 - setLineStyle("对象名", 1)  -- 0=实线, 1=虚线
@@ -574,6 +576,17 @@ export const DEFAULT_GEOGEBRA_PROMPT = `【角色与核心任务 (ROLE AND CORE 
 - setLabelVisible("对象名", true)  -- 显示/隐藏标签
 - setCaption("对象名", "LaTeX标签")  -- 设置标签文本
 - setFilling("对象名", 0.3)  -- 设置填充透明度 (0-1)
+
+【强制结构 (MANDATORY STRUCTURE) — 必须严格遵守】
+生成的 commands 必须按以下顺序与规则组织：
+
+1. **view-setup 命令放最前**：setCoordSystem → setAxesVisible → setGridVisible → setAxisLabels(1,"x","y","") → setAxisSteps(1,1,1,1)。后两条**必填**，否则轴名/刻度间距不对。
+
+2. **所有点用固定坐标**：A = (1, 2)、O = (0, 0)。**严禁用 PointIn(...)**（位置随机不可控）；关键点（如位似中心 M）必须用题目给定坐标，如 M = (-3, -1)。
+
+3. **变换点直接用撇号命名**：反射/位似/旋转的变换点命名为 A'/B'/C'/M'（撇号是 GeoGebra 合法语法）。**不要**用 A_1 + setCaption 绕路。
+
+4. **所有点创建之后，对每个点和原点追加 setLabelVisible**：setLabelVisible("A", true)、setLabelVisible("M'", true) 等。必须排在所有点创建命令**之后**——对不存在的对象调用是空操作。撇号名用双引号包：setLabelVisible("M'", true)。
 
 【输出格式 (OUTPUT FORMAT)】
 你的响应必须**只有以下 JSON 格式**，不要包含其他任何文字：
@@ -592,7 +605,9 @@ export const DEFAULT_GEOGEBRA_PROMPT = `【角色与核心任务 (ROLE AND CORE 
 5. 确保坐标范围能让所有关键图形和交点清晰可见
 6. description 用简体中文
 7. 如果题目涉及参数讨论（如讨论 a 的取值范围），用滑动条 (Slider) 展示参数变化效果
-8. 对于函数题，应画出函数图像并标注关键点（交点、顶点、渐近线等）`;
+8. 对于函数题，应画出函数图像并标注关键点（交点、顶点、渐近线等）
+9. **命令顺序**：view-setup 命令 → 创建点/图形 → 设样式(setColor/setPointSize...) → 最后 setLabelVisible。setLabelVisible 必须在所有点创建之后
+10. **必填项**：setAxisLabels(1,"x","y","") 和 setAxisSteps(1,1,1,1) 不可省略；每个点和原点都必须有对应的 setLabelVisible`;
 
 /**
  * 生成 GeoGebra 分析提示词

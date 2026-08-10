@@ -150,17 +150,46 @@ describe('GeoGebra Commands', () => {
     });
 
     describe('Command Safety', () => {
-        it('should reject commands with HTML-like characters', () => {
-            // This tests the safety check we added in runCommands
+        // Mirrors the filter in geogebra-demo.tsx runCommands:
+        // block only < > for HTML-tag defense-in-depth. Apostrophe (A'/B'/M'
+        // transform points) and double-quote (Text("...")) are legal GeoGebra
+        // DSL syntax and must NOT be blocked.
+        const isBlocked = (cmd: string) => /[<>]/.test(cmd);
+
+        it('should reject commands with HTML-like angle brackets', () => {
             const unsafeCommands = [
                 '<script>alert("xss")</script>',
                 'f(x) = <img src=x>',
-                "A = (1, 2)' onclick='alert(1)"
             ];
 
             for (const cmd of unsafeCommands) {
-                // Our safety check: /[<>'"]/.test(cmd)
-                expect(/[<>'"]/.test(cmd)).toBe(true);
+                expect(isBlocked(cmd)).toBe(true);
+            }
+        });
+
+        it('should allow apostrophe transform-point commands', () => {
+            const transformCommands = [
+                "A' = Dilate(A, -0.5, O)",
+                "B' = Dilate(B, -0.5, O)",
+                "t2 = Polygon(A', B', C')",
+                "l1 = Line(A, A')",
+                "M' = Dilate(M, -0.5, O)",
+                "l4 = Segment(M, M')",
+            ];
+
+            for (const cmd of transformCommands) {
+                expect(isBlocked(cmd)).toBe(false);
+            }
+        });
+
+        it('should allow double-quote text commands', () => {
+            const textCommands = [
+                'Text("提示", (1, 2))',
+                'SetCaption("A撇")',
+            ];
+
+            for (const cmd of textCommands) {
+                expect(isBlocked(cmd)).toBe(false);
             }
         });
 
@@ -174,7 +203,7 @@ describe('GeoGebra Commands', () => {
             ];
 
             for (const cmd of safeCommands) {
-                expect(/[<>'"]/.test(cmd)).toBe(false);
+                expect(isBlocked(cmd)).toBe(false);
             }
         });
     });
