@@ -54,7 +54,7 @@ function parseCommands(raw: string): string[] {
 }
 
 const API_PREFIXES = [
-    "setcoordsystem", "setaxesvisible", "setaxislabels", "setaxissteps",
+    "setcoordsystem", "setcoords", "setaxesvisible", "setaxislabels", "setaxissteps",
     "setaxisunits", "setgridvisible", "setgraphicsoptions", "setcolor",
     "setlinethickness", "setlinestyle", "setpointsize", "setpointstyle",
     "setlabelvisible", "setcaption", "setvisible", "setfilling",

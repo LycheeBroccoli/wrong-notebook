@@ -545,6 +545,7 @@ export const DEFAULT_GEOGEBRA_PROMPT = `【角色与核心任务 (ROLE AND CORE 
 **GeoGebra 绘图命令（通过 evalCommand 执行）：**
 - 函数：f(x) = x^2
 - 点：A = (1, 2)
+- 圆上点（约束在圆周、可沿圆拖动）：A = Point(c)  -- c 是已创建的圆对象；创建后用 setCoords("A", x, y) 固定初始位置（点仍约束在圆上）。**题目说某点在圆上/线上时，必须用 Point(<路径对象>) 创建，不要写死坐标**
 - 直线：line: y = 2x + 1  或  Line(A, B)
 - 线段：Segment(A, B)
 - 圆：Circle(A, 3)  或  c: (x-1)^2 + (y-2)^2 = 9
@@ -553,7 +554,7 @@ export const DEFAULT_GEOGEBRA_PROMPT = `【角色与核心任务 (ROLE AND CORE 
 - 交点：Intersect(f, g, 1)  或  Intersect(f, g, x1, x2)
 - 中点：Midpoint(A, B)
 - 垂线：PerpendicularLine(P, l)
-- 平行线：ParallelLine(P, l)
+- 平行线：Line(P, l)  -- 注意 GeoGebra 无 ParallelLine 命令，用 Line(<点>, <直线>) 重载实现过点平行线
 - 角度：Angle(A, B, C)
 - 文本：Text("说明文字", (x, y))
 - 滑动条：a = Slider(-5, 5, 0.1)
@@ -576,13 +577,16 @@ export const DEFAULT_GEOGEBRA_PROMPT = `【角色与核心任务 (ROLE AND CORE 
 - setLabelVisible("对象名", true)  -- 显示/隐藏标签
 - setCaption("对象名", "LaTeX标签")  -- 设置标签文本
 - setFilling("对象名", 0.3)  -- 设置填充透明度 (0-1)
+- setCoords("对象名", x, y)  -- 移动点到指定坐标（对路径约束点也生效，点仍留在路径上）
 
 【强制结构 (MANDATORY STRUCTURE) — 必须严格遵守】
 生成的 commands 必须按以下顺序与规则组织：
 
 1. **view-setup 命令放最前**：setCoordSystem → setAxesVisible → setGridVisible → setAxisLabels(1,"x","y","") → setAxisSteps(1,1,1,1)。后两条**必填**，否则轴名/刻度间距不对。
 
-2. **所有点用固定坐标**：A = (1, 2)、O = (0, 0)。**严禁用 PointIn(...)**（位置随机不可控）；关键点（如位似中心 M）必须用题目给定坐标，如 M = (-3, -1)。
+2. **点创建分两类**：
+   - **自由点**用固定坐标：A = (1, 2)、O = (0, 0)。**严禁用 PointIn(...)**（位置随机不可控）；关键点（如位似中心 M）必须用题目给定坐标，如 M = (-3, -1)。
+   - **路径约束点**（题目说某点在圆/直线/线段上时）必须用 Point(<路径对象>)：A = Point(c) 创建圆上点（可沿圆拖动、不脱离圆周），紧跟 setCoords("A", x, y) 固定初始位置（点仍约束在路径上）。**不要**用写死坐标假装在圆上——那样点可拖到圆外，违背题意。
 
 3. **变换点直接用撇号命名**：反射/位似/旋转的变换点命名为 A'/B'/C'/M'（撇号是 GeoGebra 合法语法）。**不要**用 A_1 + setCaption 绕路。
 

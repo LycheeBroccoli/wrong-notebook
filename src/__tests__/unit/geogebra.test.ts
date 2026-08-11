@@ -48,7 +48,7 @@ function parseApiArgs(cmd: string): { m: string; a: unknown[] } | null {
 
 // Test isApiCall function logic
 const API_PREFIXES = [
-    "setcoordsystem", "setaxesvisible", "setgridvisible", "setcolor",
+    "setcoordsystem", "setcoords", "setaxesvisible", "setgridvisible", "setcolor",
     "setlinethickness", "setlinestyle", "setpointsize", "setpointstyle",
     "setlabelvisible", "setcaption", "setvisible", "setfilling",
     "setvalue", "setfixed", "setbackgroundcolor",
@@ -146,6 +146,25 @@ describe('GeoGebra Commands', () => {
         it('should be case insensitive', () => {
             expect(isApiCall('SETCOORDSYSTEM(-10, 10, -10, 10)')).toBe(true);
             expect(isApiCall('SetAxesVisible(true, true)')).toBe(true);
+        });
+
+        // Regression: setCoords (path-constrained point placement) must route to
+        // the JS API path (api.setCoords), NOT fall through to evalCommand where
+        // GeoGebra's command DSL rejects lowercase 'setCoords' as "未知的指令".
+        // The AI emits 'setCoords' (lowercase s) per the prompt, matching the JS
+        // API method name. Prefix match is case-insensitive so all casings route.
+        it('should route setCoords as an API call (not evalCommand)', () => {
+            expect(isApiCall('setCoords("A", 1, 2)')).toBe(true);
+            expect(isApiCall('SetCoords("A", 1, 2)')).toBe(true);
+            expect(isApiCall('SETCOORDS("A", 1, 2)')).toBe(true);
+        });
+
+        it('should not mis-route setCoordSystem as setCoords', () => {
+            // setCoordSystem must still match setCoordSystem, not get shadowed
+            expect(isApiCall('setCoordSystem(-10, 10, -10, 10)')).toBe(true);
+            // And parseApiArgs must extract the full method name, not truncate
+            expect(parseApiArgs('setCoordSystem(-10, 10, -10, 10)')?.m).toBe('setCoordSystem');
+            expect(parseApiArgs('setCoords("A", 1, 2)')?.m).toBe('setCoords');
         });
     });
 
