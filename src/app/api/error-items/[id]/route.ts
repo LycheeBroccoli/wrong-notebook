@@ -7,6 +7,7 @@ import { unauthorized, forbidden, notFound, internalError } from "@/lib/api-erro
 import { createLogger } from "@/lib/logger";
 import { findParentTagIdForGrade } from "@/lib/tag-recognition";
 import { normalizeMistakeStatusForSave } from "@/lib/mistake-status";
+import { normalizeGeogebraCommands } from "@/lib/ai/geogebra-commands";
 
 const logger = createLogger('api:error-items:id');
 
@@ -46,6 +47,24 @@ export async function GET(
         // Ensure the user owns this item
         if (errorItem.userId !== user.id) {
             return forbidden("Not authorized to access this item");
+        }
+
+        // 在读路径上对 geogebraCommands 跑 normalizeGeogebraCommands。
+        // 写路径（POST .../geogebra）已 normalize，但存量数据可能是在等比归一化
+        // 逻辑加入之前写入的（如圆题 setCoordSystem(-6,6,-5,6) 导致圆变椭圆）。
+        // 在读路径兜底让存量数据立即修复，无需迁移脚本。幂等：已 normalize 的
+        // 再跑一次结果不变。
+        if (errorItem.geogebraCommands) {
+            try {
+                const cmds = JSON.parse(errorItem.geogebraCommands);
+                if (Array.isArray(cmds)) {
+                    const normalized = normalizeGeogebraCommands(cmds);
+                    (errorItem as { geogebraCommands: string }).geogebraCommands =
+                        JSON.stringify(normalized);
+                }
+            } catch {
+                // 非 JSON 或解析失败：原样返回，不阻断读取
+            }
         }
 
         return NextResponse.json(errorItem);

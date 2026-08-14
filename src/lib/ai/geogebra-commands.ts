@@ -35,6 +35,55 @@ const HAS_AXIS_LABELS_V1_RE = /^setAxisLabels\s*\(\s*1\s*,/i;
 const CANONICAL_AXIS_STEPS = "setAxisSteps(1, 1, 1, 1)";
 const CANONICAL_AXIS_LABELS = 'setAxisLabels(1, "x", "y", "")';
 
+// setCoordSystem(x1, x2, y1, y2) 解析。大小写不敏感（AI 产出可能是 PascalCase
+// SetCoordSystem 或小写 setCoordSystem；prompt 示例用小写，前端 isApiCall 的
+// API_PREFIXES 不含 setcoordsystem，故该命令走 evalCommand 分支，DSL 要求
+// PascalCase——但 AI 实际几乎都写小写，前端能跑说明 evalCommand 容忍小写或
+// GeoGebra 内部兼容。此处只做文本匹配与改写，不关心执行路径）。
+const COORD_SYSTEM_RE = /^setCoordSystem\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/i;
+
+// 等比容差：小于此差值视为已等比（避免浮点噪声触发无谓改写）。
+// 1 个坐标单位的差异在正方形视图下足以让圆变椭圆，故容差远小于 1。
+const COORD_EQUAL_TOL = 0.01;
+
+/**
+ * 将 setCoordSystem(x1,x2,y1,y2) 的 x/y 范围归一化为等长。
+ *
+ * 根因背景：前端 geogebra-demo.tsx 的"方案 C+"用动态正方形视图（width=height=
+ * side）保证 x/y 像素数相同。但"像素等比"只在"坐标范围也等长"时才让圆/正方形
+ * 不变形——若 y 范围比 x 短，同样像素表示更少 y 单位 → 每单位 y 像素更多 → 圆被
+ * 纵向拉成椭圆。AI 常按题目几何形状自由选范围（如圆题 -6,6,-5,6），prompt 未
+ * 强制等比，故在此确定性兜底。
+ *
+ * 策略：取较长轴的范围，把较短轴**居中扩展**到等长（保持较短轴的中心点不变）。
+ * 扩展只增边距、不裁剪图形，安全。幂等：已等比的命令原样返回。
+ *
+ * 返回改写后的命令字符串；若已等比或无法解析，返回原命令。
+ */
+function equalizeCoordSystem(cmd: string): string {
+    const m = cmd.match(COORD_SYSTEM_RE);
+    if (!m) return cmd;
+    const x1 = parseFloat(m[1]), x2 = parseFloat(m[2]);
+    const y1 = parseFloat(m[3]), y2 = parseFloat(m[4]);
+    const xRange = x2 - x1;
+    const yRange = y2 - y1;
+    if (Math.abs(xRange - yRange) < COORD_EQUAL_TOL) return cmd;
+    // 取较长范围，扩展较短轴（居中保持其中心）
+    const target = Math.max(xRange, yRange);
+    const half = target / 2;
+    let nx1 = x1, nx2 = x2, ny1 = y1, ny2 = y2;
+    if (xRange < yRange) {
+        const xc = (x1 + x2) / 2;
+        nx1 = xc - half; nx2 = xc + half;
+    } else {
+        const yc = (y1 + y2) / 2;
+        ny1 = yc - half; ny2 = yc + half;
+    }
+    // 格式化：去浮点噪声（如 -5.5000000001 → -5.5），整数去尾 .0
+    const fmt = (n: number) => String(Math.round(n * 1e6) / 1e6);
+    return `setCoordSystem(${fmt(nx1)}, ${fmt(nx2)}, ${fmt(ny1)}, ${fmt(ny2)})`;
+}
+
 /**
  * 从命令列表中检测所有被创建的点名。
  * 返回按首次出现顺序的去重点名数组。
@@ -94,6 +143,16 @@ export function normalizeGeogebraCommands(commands: string[]): string[] {
     if (!commands.length) return commands;
 
     const result = [...commands];
+
+    // ── 0. setCoordSystem 等比归一化（圆/正方形不变形）────────────────────
+    // 必须在 view-setup 补全之前跑：补全逻辑只 ensure-exists setAxisSteps/
+    // setAxisLabels，不碰 setCoordSystem；等比归一化改写 AI 的 setCoordSystem
+    // 本身。两者作用对象不重叠，顺序无依赖，但放最前语义清晰。
+    for (let i = 0; i < result.length; i++) {
+        if (COORD_SYSTEM_RE.test(result[i].trim())) {
+            result[i] = equalizeCoordSystem(result[i]);
+        }
+    }
 
     // ── 1. view-setup 补全（ensure-exists，view 1 专属）──────────────────
     const hasAxisStepsV1 = result.some((c) => HAS_AXIS_STEPS_V1_RE.test(c.trim()));
