@@ -713,9 +713,9 @@ export default function ErrorDetailPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="whitespace-pre-wrap">
+                                    <div>
                                         {item.userNotes ? (
-                                            <p className="text-foreground">{item.userNotes}</p>
+                                            <MarkdownRenderer content={item.userNotes} />
                                         ) : (
                                             <p className="text-muted-foreground italic">
                                                 {t.detail.noNotes}
