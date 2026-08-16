@@ -50,3 +50,37 @@ describe('笔记 Markdown 渲染验证', () => {
         expect(html).not.toContain('end{proof}');
     });
 });
+
+// ChatGPT 风格分隔符 \(...\) / \[...\] 兼容验证
+// remark-math@6 只认 $ / $$，渲染前需归一化（见 markdown-utils.ts normalizeMathDelimiters）
+describe('ChatGPT 风格分隔符兼容', () => {
+    it('行内 \\( ... \\) 被渲染为 katex（无字面量残留）', () => {
+        const html = renderToStaticMarkup(<MarkdownRenderer content={"当 \\(a+b+c \\neq 0\\) 时"} />);
+        expect(html).toContain('katex');
+        expect(html).not.toContain('\\(');
+        expect(html).not.toContain('\\)');
+    });
+
+    it('块级 \\[ ... \\] 被渲染为 katex（无字面量残留）', () => {
+        const html = renderToStaticMarkup(<MarkdownRenderer content={"\\[x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\\]"} />);
+        expect(html).toContain('katex');
+        expect(html).not.toContain('\\[');
+        expect(html).not.toContain('\\]');
+    });
+
+    it('混合分隔符（Gemini $ 与 ChatGPT \\(\\)）共存均渲染', () => {
+        const html = renderToStaticMarkup(<MarkdownRenderer content={"\\(a=1\\) 且 $b=2$，块级 \\[c=3\\] 与 $$d=4$$"} />);
+        expect(html).toContain('katex');
+        expect(html).not.toContain('\\(');
+        expect(html).not.toContain('\\[');
+    });
+
+    it('甄别安全性：裸括号/脚注/分式不被误伤', () => {
+        const html = renderToStaticMarkup(<MarkdownRenderer content={"参考[1]，(1+2)=3，\\(\\frac{a}{b}\\)"} />);
+        // 公式应渲染
+        expect(html).toContain('katex');
+        // 裸脚注 [1] 和裸文本 (1+2) 应原样保留（不在 katex 内）
+        expect(html).toContain('[1]');
+        expect(html).toContain('(1+2)');
+    });
+});

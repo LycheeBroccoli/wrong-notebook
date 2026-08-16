@@ -4,18 +4,22 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import { normalizeMathDelimiters } from '@/lib/markdown-utils';
 
 interface MarkdownRendererProps {
     content: string;
     className?: string;
+    // 为 true 时，加粗文本（**xx**）渲染为蓝色（用于解析/答案区点明定理/公理/性质）；
+    // 为 false/省略时保持默认前景色（黑色）。题目文本、学生笔记等不传此 prop。
+    highlightBold?: boolean;
 }
 
-export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className = '', highlightBold = false }: MarkdownRendererProps) {
     // Preprocess content to ensure proper paragraph breaks and LaTeX rendering
     // Convert single line breaks to double line breaks for better readability
     // 闭包数组：临时存放被占位保护的数学块原文，供裸 \qed 替换后按序还原
     const mathStash: string[] = [];
-    const processedContent = content
+    const processedContent = normalizeMathDelimiters(content)
         // Convert literal \n sequences to actual newlines (fix for AI responses)
         // Only convert when NOT followed by a letter, so LaTeX commands beginning
         // with \n (\neq, \nabla, \ne, \neg, \newline, \nonumber, \nu, \notin) are preserved.
@@ -98,7 +102,7 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
                     td: ({ node, ...props }) => (
                         <td className="border border-border px-4 py-2" {...props} />
                     ),
-                    strong: ({ node, ...props }) => <strong className="font-bold text-foreground" {...props} />,
+                    strong: ({ node, ...props }) => <strong className={`font-bold ${highlightBold ? 'text-blue-700 dark:text-blue-400' : 'text-foreground'}`} {...props} />,
                     em: ({ node, ...props }) => <em className="italic" {...props} />,
                 }}
             >
