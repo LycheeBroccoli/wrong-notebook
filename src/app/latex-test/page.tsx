@@ -32,6 +32,10 @@ export default function LatexTestPage() {
         {
             title: "\\neq 等命令（块级 + 行内混合，回归 4.2 整段崩塌）",
             content: "#### 情况一：当 $a+b+c\\neq0$ 时\n\n因为 $a+b+c \\neq 0$，得：\n\n$$b+c-a = -2a \\neq 0 \\implies a \\neq 0$$\n\n同理 $b \\neq 0$ 且 $c \\neq 0$。"
+        },
+        {
+            title: "证明环境与证毕符号（amsthm 风格）",
+            content: "\\begin{proof}\n这里是证明过程。\n\\qed\n\\end{proof}\n\n行内证毕：$\\qed$，方块：$\\Box$ $\\square$ $\\blacksquare$，带框空位：$\\boxed{\\phantom{x}}$"
         }
     ];
 

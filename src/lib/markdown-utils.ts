@@ -48,6 +48,11 @@ export function cleanMarkdown(content: string): string {
             .replace(/\\angle/g, '∠')
             .replace(/\\because/g, '∵')
             .replace(/\\therefore/g, '∴')
+            // 证毕与方块符号（amsthm 风格），避免纯文本预览退化成裸 qed/blacksquare
+            .replace(/\\qed/g, '■')
+            .replace(/\\blacksquare/g, '■')
+            .replace(/\\Box/g, '□')
+            .replace(/\\square/g, '□')
             // Explicitly remove math delimiters ($)
             .replace(/\$/g, '')
             // Cleanup remaining backslashes
