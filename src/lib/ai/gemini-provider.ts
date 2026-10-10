@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { AIService, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult } from "./types";
 import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateGeogebraPrompt } from './prompts';
+import { parseGeogebraResponse } from './geogebra-commands';
 import { safeParseParsedQuestion } from './schema';
 import { getAppConfig } from '../config';
 import { getMathTagsFromDB, getTagsFromDB } from './tag-service';
@@ -47,7 +48,7 @@ export class GeminiProvider implements AIService {
         }, 'AI Provider initialized');
     }
 
-    private async retryOperation<T>(operation: () => Promise<T>, maxRetries: number = 3): Promise<T> {
+    private async retryOperation<T>(operation: () => Promise<T>, maxRetries: number = 5): Promise<T> {
         let lastError: unknown;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -77,7 +78,18 @@ export class GeminiProvider implements AIService {
                     throw error;
                 }
 
-                const delay = Math.pow(2, attempt - 1) * 1000; // Exponential backoff: 1s, 2s, 4s
+                // 服务器过载（503 high demand 等）通常持续几分钟以上，短退避重试无效；
+                // 用 10s/20s/40s/60s 长退避，配合前端 180s 超时预算熬过过载窗口。
+                // 其余可重试错误（网络抖动等）保持 1s/2s/4s 短退避。
+                const isOverloaded =
+                    msg.includes('503') ||
+                    msg.includes('502') ||
+                    msg.includes('overloaded') ||
+                    msg.includes('high demand') ||
+                    msg.includes('unavailable');
+                const delay = isOverloaded
+                    ? Math.min(10_000 * Math.pow(2, attempt - 1), 60_000)
+                    : Math.pow(2, attempt - 1) * 1000; // Exponential backoff: 1s, 2s, 4s
                 logger.warn({ attempt, maxRetries, error: msg, nextRetryDelayMs: delay }, 'Gemini operation failed, retrying...');
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
@@ -369,29 +381,9 @@ export class GeminiProvider implements AIService {
             const text = response.text || '';
             logger.debug({ rawResponse: text }, 'GeoGebra AI raw response');
 
-            if (!text) throw new Error("Empty response from AI");
-
-            // Extract JSON from response (handle possible markdown code blocks)
-            let jsonStr = text.trim();
-            const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-            if (jsonMatch) {
-                jsonStr = jsonMatch[1].trim();
-            }
-
-            // Try to find JSON object
-            const objStart = jsonStr.indexOf('{');
-            const objEnd = jsonStr.lastIndexOf('}');
-            if (objStart !== -1 && objEnd !== -1) {
-                jsonStr = jsonStr.substring(objStart, objEnd + 1);
-            }
-
-            const parsed = JSON.parse(jsonStr);
-
-            return {
-                suitable: Boolean(parsed.suitable),
-                commands: Array.isArray(parsed.commands) ? parsed.commands : [],
-                description: parsed.description || "",
-            };
+            // parseGeogebraResponse 抽取 JSON + 跑 normalizeGeogebraCommands 兜底
+            // （补全 setLabelVisible/setAxisLabels/setAxisSteps）。
+            return parseGeogebraResponse(text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during GeoGebra analysis');
             this.handleError(error);

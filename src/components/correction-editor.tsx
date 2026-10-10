@@ -451,7 +451,7 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                             <CardTitle>{t.editor.preview?.answer || "Answer Preview"}</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <MarkdownRenderer content={data.answerText} />
+                            <MarkdownRenderer content={data.answerText} highlightBold />
                         </CardContent>
                     </Card>
 
@@ -460,7 +460,7 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                             <CardTitle>{t.editor.preview?.analysis || "Analysis Preview"}</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <MarkdownRenderer content={data.analysis} />
+                            <MarkdownRenderer content={data.analysis} highlightBold />
                         </CardContent>
                     </Card>
 

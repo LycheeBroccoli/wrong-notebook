@@ -4,20 +4,47 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import { normalizeMathDelimiters, promoteUnreferencedFootnotes } from '@/lib/markdown-utils';
 
 interface MarkdownRendererProps {
     content: string;
     className?: string;
+    // 为 true 时，加粗文本（**xx**）渲染为蓝色（用于解析/答案区点明定理/公理/性质）；
+    // 为 false/省略时保持默认前景色（黑色）。题目文本、学生笔记等不传此 prop。
+    highlightBold?: boolean;
 }
 
-export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className = '', highlightBold = false }: MarkdownRendererProps) {
     // Preprocess content to ensure proper paragraph breaks and LaTeX rendering
     // Convert single line breaks to double line breaks for better readability
-    const processedContent = content
+    // 闭包数组：临时存放被占位保护的数学块原文，供裸 \qed 替换后按序还原
+    const mathStash: string[] = [];
+    const processedContent = promoteUnreferencedFootnotes(normalizeMathDelimiters(content))
         // Convert literal \n sequences to actual newlines (fix for AI responses)
         // Only convert when NOT followed by a letter, so LaTeX commands beginning
         // with \n (\neq, \nabla, \ne, \neg, \newline, \nonumber, \nu, \notin) are preserved.
         .replace(/\\n(?![A-Za-z])/g, '\n')
+        // 把 \begin{proof}...\end{proof} 环境转成 Markdown 引用块，末尾补证毕符号
+        // KaTeX 不支持 amsthm 的 proof 环境，这里在预处理层拆解为普通 Markdown
+        .replace(/\\begin\{proof\}([\s\S]*?)\\end\{proof\}/g, (_m, body: string) => {
+            // 去掉环境内独立的 \qed（避免与末尾补的重复），正文按行加 > 前缀成引用块
+            const cleaned = body.replace(/\\qed(?![A-Za-z])/g, '').trim();
+            const quoted = cleaned.replace(/^/gm, '> ').replace(/^> $/gm, '>');
+            // 末尾证毕符号用 Unicode ■ 直接输出，不经过 $ 定界符，
+            // 避免被下方 $-间距正则误拼成 $$ 块级公式
+            return `\n\n${quoted}\n> \n> ■\n\n`;
+        })
+        // 兜底：未被 proof 环境包裹的裸 \qed → 行内证毕符号
+        // 必须跳过已在 $...$ / $$...$$ 数学块内的 \qed（那些由 KaTeX 的 \qed 宏处理），
+        // 否则把数学块内的 \qed 换成 ■ 会让 KaTeX 报 "Unrecognized Unicode character"。
+        // 做法：先把所有数学块占位保护（哨兵  MATH<idx> ，不会出现在正文），
+        // 替换剩余裸 \qed。
+        // 注意：占位还原必须推迟到下方所有"段萤断行/去缩进"正则之后——
+        // 这些正则按标点（. ! ? ; 等）注入 \n\n，会切进 $$...$$ 块级公式内部
+        // （如 DP=2AD. 行尾的 . 后被插入空行），破坏 $$ 配对并级联误吞后续行内
+        // 公式为"数学模式"文本。占位期间数学块是  MATH<idx>  哨兵，不受影响。
+        .replace(/\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g, (m) => ` MATH${mathStash.push(m) - 1} `)
+        .replace(/\\qed(?![A-Za-z])/g, '■')
         // Preserve existing double line breaks with a unique marker
         .replace(/\n\n/g, '\n\n###PRESERVE_BREAK###\n\n')
         // Convert patterns that should be new paragraphs
@@ -28,6 +55,8 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         // Fix: Remove indentation for lines starting with circled numbers or (n) to prevent code block rendering
         .replace(/\n\s+([\u2460-\u2473])/g, '\n$1')
         .replace(/\n\s+(\d+\))/g, '\n$1')
+        // 占位还原：所有断行/去缩进处理完毕后，再按序还原数学块原文
+        .replace(/ MATH(\d+) /g, (_m, i: string) => mathStash[Number(i)])
         // Fix LaTeX formulas: Ensure proper spacing around $ delimiters
         // This handles cases where $ might be directly adjacent to text
         .replace(/([^\s$])(\$[^$]+\$)([^\s$])/g, '$1 $2 $3')
@@ -38,7 +67,13 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         <div className={`markdown-content overflow-x-auto min-w-0 ${className}`}>
             <ReactMarkdown
                 remarkPlugins={[remarkMath, remarkGfm]}
-                rehypePlugins={[rehypeKatex]}
+                rehypePlugins={[[rehypeKatex, {
+                    // 注册 KaTeX 不原生支持的 amsthm 证毕符号命令
+                    // \qed → \blacksquare（■），与 amsthm 默认行为一致
+                    macros: {
+                        "\\qed": "\\blacksquare",
+                    },
+                }]]}
                 components={{
                     // 自定义样式
                     h1: ({ node, ...props }) => <h1 className="text-2xl font-bold mt-6 mb-4" {...props} />,
@@ -72,7 +107,7 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
                     td: ({ node, ...props }) => (
                         <td className="border border-border px-4 py-2" {...props} />
                     ),
-                    strong: ({ node, ...props }) => <strong className="font-bold text-foreground" {...props} />,
+                    strong: ({ node, ...props }) => <strong className={`font-bold ${highlightBold ? 'text-blue-700 dark:text-blue-400' : 'text-foreground'}`} {...props} />,
                     em: ({ node, ...props }) => <em className="italic" {...props} />,
                 }}
             >

@@ -4,16 +4,24 @@
 访问：`https://localhost`（首次点"高级→继续访问"）或 HTTP 备选 `http://localhost:3000`
 默认管理员：`admin@localhost` / `123456`
 
-## 一次性初始化
+## 开发与版本管理
 
-在源码仓库 `E:\2026_wrong-notebook-LB` 完成脚本开发后，部署目录执行：
+本目录是主开发工作区，代码连接 `LycheeBroccoli/wrong-notebook`。LB 目录仅保留历史归档，不再向本目录复制源码。正式数据库、运行配置和证书保持本地，不提交 GitHub。
+
+整合阶段使用 `integration/deploy-baseline`，通过草稿 PR 审核；审核合并前不更新 main。日常改动使用功能分支，测试、构建和 E2E 在独立 worktree 中运行，使用独立数据库和端口，禁止复用正式服务。
+
+数据备份和恢复见 [私人数据备份说明](docs/private-backups.md)。更新应用之前先备份，在短暂停机窗口构建、启动；不要在已有错题库上重新执行初始化或 seed。
+
+## 仅适用于全新安装的初始化
+
+以下命令仅用于没有正式数据的新安装，不适用于现有 deploy 的整合和更新：
 
 ```bat
-REM 1. 复制源码（在源码仓库根目录运行，排除运行时目录）
-robocopy E:\2026_wrong-notebook-LB E:\2026_wrong-notebook-LB-deploy /E /XD node_modules .git .next data .next-prebuilt dist-scripts certs /XF *.log
+REM 1. 使用 Git 获取经过审核的代码，不复制旧 LB 目录覆盖本地文件
+git clone https://github.com/LycheeBroccoli/wrong-notebook.git E:\wrong-notebook-new-install
 
 REM 2. 进入部署目录
-cd /d E:\2026_wrong-notebook-LB-deploy
+cd /d E:\wrong-notebook-new-install
 
 REM 3. 安装依赖（含 selfsigned）
 npm ci
