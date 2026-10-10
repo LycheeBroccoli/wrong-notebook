@@ -44,3 +44,5 @@ powershell -NoProfile -File scripts/register-backup-task.ps1
 ## 回退
 
 代码回退到已保存的整合前提交，重新构建并启动。此次不迁移正式数据库，通常无需恢复数据。确需恢复时先给当时的正式库做新快照，防止丢失整合后新增的错题。原 deploy 历史的完整 bundle 含私人凭据，只能在本地或加密归档中保管。
+
+本地启用 pre-push，阻止 archive 分支和原 deploy 私人祖先被意外推送。新克隆默认不自动启用 Git hooks，可用 `powershell -NoProfile -File scripts/install-history-guard.ps1` 显式安装。安装副本位于 Git 元数据目录，切换到归档分支时仍然有效。该保护针对已识别的私人历史，不能替代新增代码的凭据检查。
