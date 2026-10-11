@@ -19,6 +19,7 @@ import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { getMistakeStatusLabel, normalizeMistakeStatusForSave } from "@/lib/mistake-status";
 import { NotebookSelector } from "@/components/notebook-selector";
 import { GeogebraDemo } from "@/components/geogebra-demo";
+import { getGeogebraHighlights } from "@/lib/geogebra-display";
 
 interface KnowledgeTag {
     id: string;
@@ -731,7 +732,7 @@ export default function ErrorDetailPage() {
                     <div className="space-y-6 min-w-0">
                         {/* GeoGebra Dynamic Demo */}
                         {item.geogebraCommands ? (
-                            <GeogebraDemo commands={item.geogebraCommands} height={400} onRegenerate={handleAnalyzeGeogebra} />
+                            <GeogebraDemo commands={item.geogebraCommands} height={400} onRegenerate={handleAnalyzeGeogebra} highlightGroups={getGeogebraHighlights(item.id)} />
                         ) : (
                             <div className="rounded-lg border border-dashed p-4">
                                 <div className="flex items-center justify-between">

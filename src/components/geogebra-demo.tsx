@@ -2,8 +2,22 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Maximize2, Minimize2, RotateCcw, RefreshCw } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Download, Loader2, Maximize2, Minimize2, RotateCcw, RefreshCw } from "lucide-react";
 import { frontendLogger } from "@/lib/frontend-logger";
+import {
+    GEOGEBRA_PALETTES, applyGeogebraDisplay, captureGeogebraStyles, exportGeogebraPNG,
+    type GeogebraDisplayApi, type GeogebraDisplayMode, type GeogebraHighlightGroups, type GeogebraPalette, type GeogebraStyleSnapshot,
+} from "@/lib/geogebra-display";
+
+interface GeogebraApi extends GeogebraDisplayApi {
+    evalCommand(command: string): boolean;
+    newConstruction(): void;
+    setSize(width: number, height: number): void;
+    remove(): void;
+}
+type GGBAppletConstructor = new (parameters: Record<string, unknown> & { appletOnLoad: (api: GeogebraApi) => void }, html5: boolean) => { inject(id: string): void };
+type GeogebraWindow = Window & { GGBApplet?: GGBAppletConstructor };
 
 interface GeogebraDemoProps {
     commands: string;
@@ -12,6 +26,7 @@ interface GeogebraDemoProps {
     showAlgebraInput?: boolean;
     showMenuBar?: boolean;
     className?: string;
+    highlightGroups?: GeogebraHighlightGroups;
     /** Called when user clicks "重新生成" — parent should re-call AI and update commands */
     onRegenerate?: () => Promise<void>;
 }
@@ -22,7 +37,7 @@ let ggbScriptPromise: Promise<void> | null = null;
 function loadGeoGebraScript(): Promise<void> {
     if (ggbScriptPromise) return ggbScriptPromise;
     ggbScriptPromise = new Promise<void>((resolve, reject) => {
-        if (typeof window !== "undefined" && (window as any).GGBApplet) {
+        if (typeof window !== "undefined" && (window as GeogebraWindow).GGBApplet) {
             resolve();
             return;
         }
@@ -136,7 +151,7 @@ function splitTopLevelCommas(s: string): string[] {
     return parts;
 }
 
-function runCommands(api: any, cmds: string[]) {
+function runCommands(api: GeogebraApi, cmds: string[]) {
     let ok = 0, fail = 0, blocked = 0;
     const failures: string[] = [];
     for (const cmd of cmds) {
@@ -146,11 +161,12 @@ function runCommands(api: any, cmds: string[]) {
                 if (!p) {
                     blocked++;
                     frontendLogger.warn('[GGB]', 'Invalid API call', { cmd });
-                } else if (typeof api[p.m] !== 'function') {
+                } else if (typeof (api as unknown as Record<string, unknown>)[p.m] !== 'function') {
                     blocked++;
                     frontendLogger.warn('[GGB]', 'Unsupported API method', { method: p.m, cmd });
                 } else {
-                    api[p.m](...p.a);
+                    const method = (api as unknown as Record<string, unknown>)[p.m];
+                    if (typeof method === 'function') method.apply(api, p.a);
                     ok++;
                 }
             } else {
@@ -195,19 +211,29 @@ export function GeogebraDemo({
     showAlgebraInput = false,
     showMenuBar = false,
     className = "",
+    highlightGroups,
     onRegenerate,
 }: GeogebraDemoProps) {
     // This ref points to a div that React NEVER puts children into.
     // All GeoGebra DOM is injected via innerHTML in the effect, so
     // React's reconciler never touches the inside of this node.
     const ggbHostRef = useRef<HTMLDivElement>(null);
-    const apiRef = useRef<any>(null);
+    const apiRef = useRef<GeogebraApi | null>(null);
     const idRef = useRef(`ggb-${Math.random().toString(36).slice(2, 9)}`);
+    const stylesRef = useRef<GeogebraStyleSnapshot | null>(null);
+    const choicesRef = useRef<{ mode: GeogebraDisplayMode; palette: GeogebraPalette }>({ mode: 'teaching', palette: 'teal-magenta' });
+    const busyRef = useRef(false);
+    const expandedRef = useRef(false);
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [expanded, setExpanded] = useState(false);
     const [regenerating, setRegenerating] = useState(false);
+    const [mode, setMode] = useState<GeogebraDisplayMode>('teaching');
+    const [palette, setPalette] = useState<GeogebraPalette>('teal-magenta');
+    const [displayReady, setDisplayReady] = useState(false);
+    const [actionBusy, setActionBusy] = useState(false);
+    const [actionError, setActionError] = useState<string | null>(null);
 
     const cmds = useMemo(() => parseCommands(commands), [commands]);
 
@@ -217,12 +243,18 @@ export function GeogebraDemo({
 
         let dead = false;
         const id = idRef.current;
+        const elForCleanup = ggbHostRef.current;
+        setLoading(true);
+        setError(null);
+        setActionError(null);
+        setDisplayReady(false);
+        stylesRef.current = null;
 
         frontendLogger.info('[GGB]', 'effect start', { id, cmdCount: cmds.length, firstCmd: cmds[0] });
 
         loadGeoGebraScript().then(() => {
             if (dead) { frontendLogger.warn('[GGB]', 'script resolved but dead', { id }); return; }
-            const GGBApplet = (window as any).GGBApplet;
+            const GGBApplet = (window as GeogebraWindow).GGBApplet;
             if (!GGBApplet) {
                 frontendLogger.error('[GGB]', 'GGBApplet undefined after script load', { id });
                 setError("GeoGebra 未正确加载"); setLoading(false); return;
@@ -241,7 +273,7 @@ export function GeogebraDemo({
             // x/y pixel-per-unit is identical, no axis distortion. Matches textbook
             // figure framing; side whitespace is natural for math figures. Adapts to
             // narrow screens (mobile) without hardcoded magic numbers.
-            const side = Math.min(hostW, height);
+            const side = Math.min(hostW, expandedRef.current ? 700 : height);
 
             // Write the inject target directly — React never reconciles this.
             // Center the square applet in the (wider) host with margin:0 auto.
@@ -257,11 +289,11 @@ export function GeogebraDemo({
                     showToolBar,
                     showAlgebraInput,
                     showMenuBar,
-                    showResetIcon: true,
+                    showResetIcon: false,
                     enableRightClick: true,
                     enableShiftDragZoom: true,
                     language: "zh",
-                    appletOnLoad: (api: any) => {
+                    appletOnLoad: (api: GeogebraApi) => {
                         if (dead) { frontendLogger.warn('[GGB]', 'appletOnLoad fired but dead', { id }); return; }
                         // D1: force applet pixel size on load — deployggb.js does not honor
                         // width:"100%"/perspective sizing on its own, so the internal frame
@@ -286,17 +318,25 @@ export function GeogebraDemo({
                         };
                         // List available api methods (debug which API surface we have)
                         let apiMethods: string[] = [];
-                        try { apiMethods = Object.keys(api || {}).filter((k) => typeof api[k] === 'function'); } catch (e) {}
+                        try { apiMethods = Object.keys(api || {}).filter((k) => typeof (api as unknown as Record<string, unknown>)[k] === 'function'); } catch {}
                         // Version check — getViewProperties/getGraphicsOptions need >=6.0
                         let ggbVersion: string | null = null;
-                        try { ggbVersion = typeof api.getVersion === 'function' ? api.getVersion() : null; } catch (e) {}
+                        try { const version = (api as unknown as { getVersion?: () => string }).getVersion; ggbVersion = typeof version === 'function' ? version.call(api) : null; } catch {}
                         frontendLogger.info('[GGB]', 'appletOnLoad fired', { id, hasApi: !!api, dims, apiMethods, ggbVersion });
                         apiRef.current = api;
                         runCommands(api, cmds);
+                        try {
+                            stylesRef.current = captureGeogebraStyles(api);
+                            applyGeogebraDisplay(api, stylesRef.current, choicesRef.current.mode, choicesRef.current.palette, highlightGroups);
+                            setDisplayReady(true);
+                        } catch (e) {
+                            frontendLogger.error('[GGB]', 'Display initialization failed', { error: String(e) });
+                            setActionError('无法初始化展示模式，请重试');
+                        }
                         // Layer 1: verify objects exist — use getAllObjectNames() dynamically
                         // (hardcoded expected list missed A'/B'/C'/M' transform points)
                         let allNames: string[] = [];
-                        try { allNames = typeof api.getAllObjectNames === 'function' ? api.getAllObjectNames() : []; } catch (e) {}
+                        try { allNames = typeof api.getAllObjectNames === 'function' ? api.getAllObjectNames() : []; } catch {}
                         const expected = ['O', 'A', 'B', 'C', 't1', 't2', 'lA', 'M'];
                         const existence: Record<string, boolean | string> = {};
                         try {
@@ -308,14 +348,8 @@ export function GeogebraDemo({
                             } else {
                                 existence['_note'] = 'api.exists not a function';
                             }
-                        } catch (e) {}
-                        // Test a bare isolated point to see if canvas can render anything at all
-                        let testPoint = -1;
-                        try {
-                            const r = api.evalCommand('(99, 99)');
-                            testPoint = r ? 1 : 0;
-                        } catch (e) {}
-                        frontendLogger.info('[GGB]', 'after runCommands', { id, existence, allNames, testPoint });
+                        } catch {}
+                        frontendLogger.info('[GGB]', 'after runCommands', { id, existence, allNames });
                         setLoading(false);
                         frontendLogger.info('[GGB]', 'loading set false after runCommands', { id });
                         // Layer 2/3: official API diagnostics (read-only, after commands settled)
@@ -326,20 +360,20 @@ export function GeogebraDemo({
                                 pngBase64 = api.getPNGBase64(1, true, 72);
                                 pngLen = pngBase64 ? pngBase64.length : 0;
                             }
-                        } catch (e) {}
-                        let viewProps: any = null, graphicsOpts: any = null, perspXML: string | null = null;
+                        } catch {}
+                        let viewProps: ReturnType<GeogebraDisplayApi['getViewProperties']> | null = null;
+                        let graphicsOpts: ReturnType<GeogebraDisplayApi['getGraphicsOptions']> | null = null;
                         try {
                             if (typeof api.getViewProperties === 'function') viewProps = api.getViewProperties(1);
                             if (typeof api.getGraphicsOptions === 'function') graphicsOpts = api.getGraphicsOptions(1);
-                            if (typeof api.getPerspectiveXML === 'function') perspXML = api.getPerspectiveXML();
-                        } catch (e) {}
+                        } catch {}
                         // 方案 C+ 验收: x/y 等比 → invXscale/invYscale ≈ 1.0
                         // (invXscale = coord units per pixel; equal ranges + square view → equal)
                         // getViewProperties may return a JSON string instead of an object
                         // (observed in production logs), so normalize before computing.
-                        let vp: any = viewProps;
-                        if (typeof vp === 'string') {
-                            try { vp = JSON.parse(vp); } catch (e) { vp = null; }
+                        let vp: { width?: number; invXscale?: number; invYscale?: number } | null = typeof viewProps === 'object' ? viewProps : null;
+                        if (typeof viewProps === 'string') {
+                            try { vp = JSON.parse(viewProps as string); } catch { vp = null; }
                         }
                         let axesRatio: number | null = null;
                         let axesOk = false;
@@ -348,7 +382,7 @@ export function GeogebraDemo({
                                 axesRatio = vp.invXscale / vp.invYscale;
                                 axesOk = Math.abs(axesRatio - 1) < 0.01;
                             }
-                        } catch (e) {}
+                        } catch {}
                         frontendLogger.info('[GGB]', 'layer2/3 API diagnostics', {
                             id,
                             pngLen,
@@ -356,7 +390,6 @@ export function GeogebraDemo({
                             axesRatio,
                             axesOk,
                             graphicsOpts,
-                            perspXML: perspXML ? perspXML.slice(0, 300) : null,
                         });
                         // After React re-renders (loading=false) + GeoGebra canvas settles,
                         // walk the actual DOM to find canvas + check computed visibility.
@@ -389,9 +422,8 @@ export function GeogebraDemo({
                                     GeoGebraFrame: pick('.GeoGebraFrame'),
                                     EuclidianPanel: pick('.EuclidianPanel'),
                                 };
-                                const frameDims = layerDims.GeoGebraFrame;
                                 const els = host.querySelectorAll('*');
-                                const summary: any[] = [];
+                                const summary: Record<string, unknown>[] = [];
                                 els.forEach((el, i) => {
                                     if (i > 60) return;
                                     const htmlEl = el as HTMLElement;
@@ -447,13 +479,15 @@ export function GeogebraDemo({
                 frontendLogger.warn('[GGB]', 'Cleanup failed', { id, error: String(e) });
             }
             apiRef.current = null;
+            stylesRef.current = null;
             // Clear injected DOM
-            if (ggbHostRef.current) {
-                ggbHostRef.current.innerHTML = '';
+            const host = elForCleanup;
+            if (host) {
+                host.innerHTML = '';
             }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cmds, showToolBar, showAlgebraInput, showMenuBar]);
+    }, [cmds, showToolBar, showAlgebraInput, showMenuBar, highlightGroups]);
 
     // ── Resize when expanded toggles ────────────────────────────────────
     useEffect(() => {
@@ -473,12 +507,81 @@ export function GeogebraDemo({
     // ── Reset ───────────────────────────────────────────────────────────
     const handleReset = useCallback(() => {
         const api = apiRef.current;
-        if (!api) return;
+        if (!api || busyRef.current) return;
+        busyRef.current = true;
+        setActionBusy(true);
+        setActionError(null);
         try {
-            api.resetConstruction();
-            setTimeout(() => { if (apiRef.current) runCommands(apiRef.current, cmds); }, 300);
-        } catch (e) { console.warn("[GGB] Reset failed", e); }
-    }, [cmds]);
+            api.newConstruction();
+            runCommands(api, cmds);
+            stylesRef.current = captureGeogebraStyles(api);
+            applyGeogebraDisplay(api, stylesRef.current, choicesRef.current.mode, choicesRef.current.palette, highlightGroups);
+            setDisplayReady(true);
+        } catch (e) {
+            frontendLogger.error('[GGB]', 'Reset failed', { error: String(e) });
+            setActionError('重置失败，请重试');
+        } finally {
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                busyRef.current = false;
+                setActionBusy(false);
+            }));
+        }
+    }, [cmds, highlightGroups]);
+
+    const handleDisplayChange = useCallback((nextMode: GeogebraDisplayMode, nextPalette: GeogebraPalette) => {
+        const api = apiRef.current;
+        const snapshot = stylesRef.current;
+        if (!api || !snapshot || busyRef.current) return;
+        busyRef.current = true;
+        setActionBusy(true);
+        setActionError(null);
+        try {
+            applyGeogebraDisplay(api, snapshot, nextMode, nextPalette, highlightGroups);
+            choicesRef.current = { mode: nextMode, palette: nextPalette };
+            setMode(nextMode);
+            setPalette(nextPalette);
+        } catch (e) {
+            frontendLogger.error('[GGB]', 'Display change failed', { error: String(e) });
+            // Roll back a partially applied presentation without moving any points.
+            try { applyGeogebraDisplay(api, snapshot, choicesRef.current.mode, choicesRef.current.palette, highlightGroups); } catch {}
+            setActionError('切换失败，请重试');
+        } finally {
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                busyRef.current = false;
+                setActionBusy(false);
+            }));
+        }
+    }, [highlightGroups]);
+
+    const handleDownload = useCallback(async () => {
+        const api = apiRef.current;
+        if (!api || busyRef.current) return;
+        busyRef.current = true;
+        setActionBusy(true);
+        setActionError(null);
+        let url: string | null = null;
+        try {
+            // Let React paint the busy state before the high-resolution renderer runs.
+            await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+            if (apiRef.current !== api) return;
+            const png = exportGeogebraPNG(api);
+            const bytes = Uint8Array.from(atob(png), char => char.charCodeAt(0));
+            url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `geogebra-${choicesRef.current.mode === 'print' ? 'print' : choicesRef.current.palette}-${Date.now()}.png`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (e) {
+            frontendLogger.error('[GGB]', 'PNG export failed', { error: String(e) });
+            setActionError('图片下载失败，请重试');
+        } finally {
+            if (url) setTimeout(() => URL.revokeObjectURL(url!), 1000);
+            busyRef.current = false;
+            setActionBusy(false);
+        }
+    }, []);
 
     // ── Regenerate ──────────────────────────────────────────────────────
     const handleRegenerate = useCallback(async () => {
@@ -492,21 +595,46 @@ export function GeogebraDemo({
     }, [onRegenerate, regenerating]);
 
     if (cmds.length === 0) return null;
+    const controlsDisabled = loading || regenerating || actionBusy;
 
     return (
         <div className={`relative rounded-lg border bg-card ${className}`}>
             {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b bg-muted/30">
                 <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-muted-foreground">
                         GeoGebra 动态演示
                     </span>
                     {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-wrap items-center gap-2">
+                    {highlightGroups && (
+                        <label className="flex items-center gap-1 text-xs">
+                            <span>重点配色</span>
+                            <select aria-label="重点配色" value={palette}
+                                onChange={e => handleDisplayChange(mode, e.target.value as GeogebraPalette)}
+                                disabled={controlsDisabled || !displayReady || mode === 'print'}
+                                className="h-7 rounded border bg-background px-1 text-xs disabled:opacity-50">
+                                {Object.entries(GEOGEBRA_PALETTES).map(([key, option]) => (
+                                    <option key={key} value={key}>{option.label}</option>
+                                ))}
+                            </select>
+                        </label>
+                    )}
+                    <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                        <Switch aria-label="白纸打印" checked={mode === 'print'}
+                            onCheckedChange={checked => handleDisplayChange(checked ? 'print' : 'teaching', palette)}
+                            disabled={controlsDisabled || !displayReady} />
+                        <span>白纸打印</span>
+                    </label>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1"
+                        onClick={handleDownload} disabled={controlsDisabled || !displayReady} title="下载当前绘图区的高清 PNG">
+                        {actionBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                        <span>下载 PNG</span>
+                    </Button>
                     {onRegenerate && (
                         <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1"
-                            onClick={handleRegenerate} title="重新生成" disabled={regenerating || loading}>
+                            onClick={handleRegenerate} title="重新生成" disabled={controlsDisabled}>
                             {regenerating
                                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                 : <RefreshCw className="h-3.5 w-3.5" />}
@@ -514,12 +642,12 @@ export function GeogebraDemo({
                         </Button>
                     )}
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
-                        onClick={handleReset} title="重置" disabled={loading}>
+                        onClick={handleReset} title="重置" disabled={controlsDisabled}>
                         <RotateCcw className="h-3.5 w-3.5" />
                     </Button>
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
-                        onClick={() => setExpanded((v) => !v)}
-                        title={expanded ? "缩小" : "放大"}>
+                        onClick={() => { expandedRef.current = !expanded; setExpanded(!expanded); }}
+                        disabled={controlsDisabled} title={expanded ? "缩小" : "放大"}>
                         {expanded
                             ? <Minimize2 className="h-3.5 w-3.5" />
                             : <Maximize2 className="h-3.5 w-3.5" />}
@@ -533,6 +661,7 @@ export function GeogebraDemo({
              * tries to reconcile DOM nodes inside this div.
              */}
             <div ref={ggbHostRef} />
+            {actionError && <p role="alert" className="px-3 py-2 text-xs text-destructive">{actionError}</p>}
 
             {/* Loading overlay — sibling, not child of ggbHost */}
             {loading && (
