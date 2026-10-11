@@ -276,7 +276,7 @@ function PrintPreviewContent() {
                             {showAnswers && item.answerText && (
                                 <div className="mb-4">
                                     <h3 className="font-semibold mb-2">{t.printPreview?.referenceAnswer || 'Reference Answer'}:</h3>
-                                    <MarkdownRenderer content={item.answerText} />
+                                    <MarkdownRenderer content={item.answerText} highlightBold />
                                 </div>
                             )}
 
@@ -284,7 +284,7 @@ function PrintPreviewContent() {
                             {showAnalysis && item.analysis && (
                                 <div className="mb-4">
                                     <h3 className="font-semibold mb-2">{t.printPreview?.analysis || 'Analysis'}:</h3>
-                                    <MarkdownRenderer content={item.analysis} />
+                                    <MarkdownRenderer content={item.analysis} highlightBold />
                                 </div>
                             )}
                         </div>

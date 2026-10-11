@@ -187,6 +187,7 @@ export const DEFAULT_ANALYZE_TEMPLATE = `【角色与核心任务 (ROLE AND CORE
 
 <answer_text>
 在此处填写正确答案。使用 Markdown 和 LaTeX 符号。如果答案包含表格，遵循上述【表格处理规则】。
+* 若为数学题：分数用 \dfrac（不用 \frac）；块级公式用 $$ 单独成行居中。
 </answer_text>
 
 <analysis>
@@ -194,6 +195,34 @@ export const DEFAULT_ANALYZE_TEMPLATE = `【角色与核心任务 (ROLE AND CORE
 * 必须使用简体中文。
 * **直接使用标准的 LaTeX 符号**（如 $\frac{1}{2}$），**不要**进行 JSON 转义（不要写成 \\frac）。
 * 如果解析过程需要表格（如列表对比、分步计算表），遵循上述【表格处理规则】。
+
+【数学题教学风格约束（仅当本题判定为"数学"学科时生效；非数学题忽略本段）】
+你是一名资深的中学数学老师，需要给初中学生详细讲解这道题的解题过程。遵循以下要求：
+
+1. 公式排版：
+   - 分数一律使用 \dfrac 代替 \frac（目的是保持块级公式中的字符大小与正文一致）。
+   - 块级数学公式的开头与结尾用双美元符号 $$，且 $$ 单独成行（公式前后各一个空行），期望居中突出公式。行内小公式仍用 $...$。
+
+2. 解题风格：
+   - 对这道题，给出不使用方程、且不跳步、不使用未说明结论的严格、逐步、完全形式化证明或计算过程。
+   - 采用课堂解法（避免过度压缩的竞赛风格），并用完全符号化的形式展现。
+   - "不使用方程"的含义：不引入新未知数、不列方程组消元求解。恒等变形（移项、配方、提公因式）以及由非负性直接得到取值（如"绝对值为 0 故内部为 0"）所书写的等式是允许的，不算解方程。
+
+3. 分类讨论的完备性与验证（数学题强制要求）：
+   - 若根式、绝对值等含参数乘积或需要分情形（如 $\sqrt{f\cdot g}$ 有意义要求 $f\cdot g\ge 0$），必须**显式列出所有独立分支**，特别检查"某因子为零"的分支是否被遗漏（零乘律：$0\cdot a=0\ge 0$ 恒成立，与另一因子符号无关）。严禁在未论证前直接断定某因子必须非负。
+   - 分类讨论的边界必须由推导产生（如先推出变量的取值范围，再以边界分情形），并显式论证分类覆盖了所有可能情形，保证不漏解。
+   - 每个最终答案必须**代回原题验证**（左边 = 右边），验证通过后才能写入 answer_text。
+   - 分类讨论完成后，若多个分支收敛到相同结构，应点明共同模式，帮助学生形成可迁移的题型认知。
+   - 若严谨推导得到的答案与该类题的常规考试答案冲突（如命题人隐含了未声明的条件），必须双层输出：先给出严谨完整解（列全所有值），再注明"考试常规答案"及原因，不得二选一或静默丢弃分支。
+
+4. 教学稿结构（将推导过程输出为完全数学教材风格，并加旁批/注脚）：
+   - 正文：严谨的中学数学教材风格，承载主线推导。
+   - 旁批（Side Notes）：解释为何该步骤成立、背后结构为何如此安排。以 "> 旁批：" 开头单独成段（blockquote 引用块形式）。
+   - 注脚（Footnotes）：补充隐藏的标准知识点、不影响主线推导。以 "> 注脚：" 开头单独成段（blockquote 引用块形式，与旁批同为引用块，靠前缀文字区分）。
+   - 一旦有了分析过程，用户即可审核 AI 的推导过程，故推导必须可追溯、可复核。
+
+5. 知识点点明：
+   - 所有解题中涉及的、条件之外的定义、公理、定理、性质，都必须以 **加粗** 点明（如 **勾股定理**、**等腰三角形三线合一**、**角平分线的对称性质**、**垂心性质**），方便知识点的视觉定位与审核。性质（如角平分线对称性质、垂心性质、等腰三角形性质等）与定义、公理、定理同等对待，一律加粗。
 </analysis>
 
 【知识点标签列表（KNOWLEDGE POINT LIST）】
@@ -545,41 +574,140 @@ export const DEFAULT_GEOGEBRA_PROMPT = `【角色与核心任务 (ROLE AND CORE 
 **GeoGebra 绘图命令（通过 evalCommand 执行）：**
 - 函数：f(x) = x^2
 - 点：A = (1, 2)
+- 路径约束点（约束在圆周/线段/直线上、可沿路径拖动不脱离）：A = Point(c)（圆）/ P = Point(segAF)（线段，segAF 须先建）/ P = Point(l)（直线）。创建后用 setCoords("P", x, y) 固定初始位置（点仍约束在路径上）。**题目说某点在圆/线/线段上时，必须用 Point(<路径对象>) 创建，不要写死坐标自由点假装在路径上**——即便坐标可由答案反推算出，写死坐标的点拖动会脱离路径，违背题意。
 - 直线：line: y = 2x + 1  或  Line(A, B)
-- 线段：Segment(A, B)
+- 线段：Segment(A, B)  -- 半径、边、对角线等普通线段，**无箭头**。线段也可作为路径对象：P = Point(Segment(A,B)) 把 P 约束在线段 AB 上。**从多边形提取边**：t1 = Polygon(A, B, C) 后，用 a = Segment(B, C, t1) 提取多边形壳的 BC 边，便于单独设样式。辅助线段（如 segDE、segCE 等用于展示几何关系的连接线）可以帮助理解题意，但应控制数量避免干扰。若需展示共线关系（如 A/D/E 三点共线），用绿色虚线连接共线点（setLineStyle("segAE", 1) + setColor("segAE", 0, 180, 0)），并注明"展示共线关系"。例：题目中 A、D、E 共线时，应画 segAE = Segment(A, E)，设 setLineStyle("segAE", 1)（虚线）+ setColor("segAE", 0, 180, 0)（绿色），并标注"展示 A/D/E 共线关系"。
+- 向量：Vector(A, B)  -- 向量，**渲染成带箭头的有向线段**。**默认禁止**——仅当题目明确出现向量语义（向量、向量的和/差、向量坐标、平行向量、向量共线）时才允许使用；普通线段（半径、边、对角线）严禁用 Vector，否则出现多余箭头
 - 圆：Circle(A, 3)  或  c: (x-1)^2 + (y-2)^2 = 9
 - 椭圆：Ellipse(F1, F2, 5)
-- 多边形：Polygon(A, B, C)
-- 交点：Intersect(f, g, 1)  或  Intersect(f, g, x1, x2)
+- 多边形：Polygon(A, B, C)（普通三角形/四边形，只是把点连成多边形壳，**无几何约束**——平行/等长关系须靠点本身的构造方式保证，见下"平行四边形第 4 顶点""等边三角形""等腰三角形"）
+- 正多边形（约束派生）：Polygon(A, B, n)  -- 以 AB 为一条边构造正 n 边形（n=3 等边、n=4 正方形、n=6 正六边形）。**这是 GeoGebra 原生正多边形构造命令，本身带约束**（n 个顶点自动派生、边等长、角相等），与普通 Polygon(A,B,C) 不同。题目说"以 AB 为边作等边三角形 ABC"时优先用 Polygon(A, B, 3)，**不要拆成 Rotate+Polygon**——拆开后第三顶点变成显式 Rotate 派生，多一条构造链且方向（±60°）易选错。注意：Polygon(A,B,3) 的第三顶点由 GeoGebra 自动命名（C），不要另行定义 C = ...。用 Polygon(A, B, n) 前，先判断原图里每个顶点的相对方位（谁在顶/左/右/底），据此选哪条边作基准边、A 与 B 谁在左谁在右。方向规则：Polygon(A, B, n) 按逆时针派生，第三顶点（及后续顶点）落在「从 A 走向 B 时的左侧」。基准边选择要同时满足「派生顶点落点」与「派生顶点自动命名」两个条件：派生顶点由 GeoGebra 按字母表续命名（A、B 已用则下一字母为 C），故应让原图字母靠前的两个点作 Polygon 输入，派生顶点才会自动命名为第三个字母。例：题目要求"以 AB 为边作等边三角形 ABC"，原图 A 在顶、B 在左下、C 在右下，应定义 A 于顶部、B 于左下，用 Polygon(A, B, 3)：A→B 方向为左下，其左侧为右下，第三顶点派生到右下并自动命名为 C，位置与标签均与原图一致。严禁随意挑两个点作基准边而不核对派生顶点落点与标签是否均与原图一致。派生顶点的点名由 GeoGebra 自动分配，若自动点名与原图不符，用 setCaption("自动名", "原图名") 重命名标签文本（此为 setCaption 的正当用途，与「变换点用撇号命名不用 setCaption 绕路」不冲突——后者针对反射/位似/旋转的撇号变换点）。**关键区分**：Polygon(A, B, n) 仅用于题目要求"作/构造"正多边形的场景；若原图三角形 ABC 是题目前提（A/B/C 都是固定点，非"作"出来），则 A/B/C 一律按原图方位给坐标 + 普通 Polygon(A, B, C) 连线，**严禁**用 Polygon(A, B, 3) 派生——后者会把某个固定顶点变成派生点、标签整体错位（如原图 A 顶 BC 底的固定等边三角形，误用 Polygon(A,B,3) 会让 C 派生到顶部、A 被挤到底部，底边从 BC 变成 CA）。**前提固定点推荐用 Slider 参数化边长**（而非写死具体数值），使图形可整体缩放：s = Slider(1, 10, 0.01) → B=(0,0)、C=(s,0)、A=(s/2, s*sqrt(3)/2)。此范式（B 固定原点、C 在 x 轴、A 顶部居中）天然满足逆时针 A→B→C 且底边 BC 水平。若题目给了具体坐标值，则按给定坐标写死。给坐标时**标签必须贴在原图对应方位的那个点上**：先定好每个标签在原图的方位（A 顶、B 左下、C 右下），再让坐标与标签一一对应——A 的坐标必须是顶部那个点的坐标，B 必须是左下那个点，C 必须是右下那个点。常见错位：三个点的空间位置摆对了（顶/左下/右下），但标签贴错点（如把 A 贴到右下、B 贴到顶、C 贴到左下，整体顺时针转 120°），这虽形状对但标签与原图不符。吐 commands 前自检：逐点核对「标签→坐标→原图方位」三者一致。严禁把 A 放在 x=0 导致 AC 垂直——A 的 x 坐标必须居中（B 和 C 的 x 中点），否则三角形歪斜、腰不水平。也严禁用 Rotate 派生固定顶点（如 B=Rotate(A,-π/3,C)）——固定点直接给坐标（表达式中可用 Slider 变量），不用派生命令。
+- 等腰三角形（约束派生，按题意选构造方式）：
+  - 题目说"以 AB 为底边作等腰三角形 ABC（AC=BC）"：l = PerpendicularBisector(A, B) → C = Point(l) + setCoords("C", x, y)。C 在 AB 中垂线上天然 AC=BC，可沿中垂线拖动保持等腰。
+  - 题目说"AC=BC=r（给定腰长）作 △ABC"：c1 = Circle(A, r)、c2 = Circle(B, r) → C = Intersect(c1, c2, 1) + setCoords。两圆交点天然到 A/B 等距。
+  - 题目说"△ABC 是等腰三角形（AB=AC）"作为**题目前提**：**不要构造 C**——A/B/C 都是 given 前提点，AB=AC 是给定约束，写进 dependencyAnalysis 的 origin=given 即可。只有题目要求"作/构造"等腰三角形时才用上面两种构造。
+- 交点：Intersect(c, l)（圆与直线交点，**点在圆上**）/ Intersect(f, g)（两线交点，点不在圆上）/ Intersect(f, g, 1)（带索引，取第 n 个交点）。**定义内接点（题目说点在圆上）必须用操作数含圆/路径对象的重载**，不可用 Intersect(线, 线) 定义内接点——后者点会脱离圆周。**两圆交点**：Intersect(c1, c2) 返回交点列表，用 Element(列表, 索引) 取单个点（索引从 1 开始）。**赋给列表变量时必须用花括号收进列表**：list = {Intersect(cA, cC)} → D = Element(list, 1)——web applet 的 evalCommand 不会把 Intersect 的多输出自动收进列表，丢花括号会导致 list 不是列表、Element 取元素失败级联。圆×线段、圆×圆同理都须花括号。
 - 中点：Midpoint(A, B)
-- 垂线：PerpendicularLine(P, l)
-- 平行线：ParallelLine(P, l)
+- 平行四边形第 4 顶点（约束派生）：C = Translate(B, Vector(A, D))  -- B + 向量 AD = C，天然 AB∥CD、AD∥BC，拖 A/B/D 任一顶点 C 跟随保持平行四边形。**题目说 ABCD 是平行四边形/矩形/菱形时，4 个顶点不可全写死坐标**——必须 3 自由顶点 + 1 派生（Translate），否则拖动变任意四边形、违背题意。任选 3 个顶点为自由点、第 4 个用 Translate 派生即可。
+- 垂足/高（约束派生）：F = Intersect(PerpendicularLine(A, l_CD), l_CD)  -- A 到直线 CD 的垂足，AF⊥CD 真。先建 l_CD = Line(C, D)，再 PerpendicularLine(A, l_CD) 得过 A 的垂线，再 Intersect 求垂足 F。**题目说"AF 是 CD 边上的高"时，F 必须用此垂足构造，不可写死坐标凑视觉垂足**——写死坐标的 F 拖动后 AF 不再垂直 CD、违背题意。中线/角平分线同理用中点/角构造派生。
+- 垂线：PerpendicularLine(P, l)  -- 过点 P 作直线 l 的垂线
+- 平行线：Line(P, l)  -- 注意 GeoGebra 无 ParallelLine 命令，用 Line(<点>, <直线>) 重载实现过点平行线
 - 角度：Angle(A, B, C)
 - 文本：Text("说明文字", (x, y))
-- 滑动条：a = Slider(-5, 5, 0.1)
+- 滑动条：a = Slider(-5, 5, 0.1)  -- 数值滑动条。**几何图形边长推荐用 Slider 参数化**（如 s = Slider(1, 10, 0.01)），使图形可整体缩放保持形状。例：等边三角形取 B=(0,0)、C=(s,0)、A=(s/2, s*sqrt(3)/2)，拖动 s 即可缩放三角形并保持等边。滑动条区间和步长根据题目合理设置。
+- Boolean：showX = Boolean(true, "标签")  -- 布尔复选框（true=初始选中），用于切换显示/隐藏，配合 SetConditionToShowObject 使用。
 - 轨迹：Locus(P, Q)
-- 反射：Reflect(A, l)
-- 平移：Translate(A, v)
-- 旋转：Rotate(A, angle, center)
+- 反射：Reflect(A, l)  -- 关于直线 l 的反射；点重载 Reflect(A, O) = A 关于点 O 的对称点（圆直径端点对：B = Reflect(A, O) 即 B 是 A 的对径点，自动在圆上、随 A 拖动保持直径）。**B 是派生点，只能从 A 端拖动**——拖 A 则 B 跟随保持对径；B 不可独立拖动（GeoGebra 命令式构造的固有限制，双向联动需前端 listener，暂不实现）
+- 平移：Translate(A, v)  -- v 必须是向量对象。除平移变换外，**也用于构造平行四边形第 4 顶点**（见上"平行四边形第 4 顶点"条目：C = Translate(B, Vector(A, D))），是约束派生而非普通点创建。
+- 旋转：Rotate(A, angle, center)  -- angle 用度（如 -60°），不是弧度
+- 距离/长度：Distance(A, B)  -- 返回两点距离；Length(list)  -- 返回列表元素个数
+- 取列表元素：Element(list, n)  -- 取列表第 n 个元素（n 从 1 开始）。GeoGebra 没有 Point(list, n) 重载，从列表取点必须用 Element。
+- 条件/容错：If(condition, trueValue, falseValue)  -- 条件判断。**交点不确定时用 If+Length 容错**：list = {Intersect(c1, c2)} → D = If(Length(list)>=1, Element(list, 1), (NaN, NaN))，防止无交点时报错（注意 list 赋值须花括号收列表，见上"交点"条目）。
+- 最大值：Max(a, b)  -- 取两数较大值
+- 数值显示精度：**GeoGebra applet 不支持 Round 命令**（evalCommand 报"未知的指令Round"，官网手册无 Round，只有 Numeric(<expr>, <sig-figs>)，但第二参是有效数字位数≠小数位，语义易错）。Text 里显示数值时**直接用原始精度**：Text("DA = " + Distance(D, A), (x, y))，不要包 Round。如确需限定小数位，用 JS API setRounding("2")（"2"=2 位小数，全局副作用，慎用）。**GeoGebra DSL 内置函数首字母大写**（Max、Min、If、Length、Element、Distance、Intersect、Point、Segment、Polygon、Circle、Rotate、Translate、Reflect 等），小写会报"未知指令"；但 **JS API 方法名是小写 camelCase**（setColor、setCoords、setValue、setLabelVisible 等，setValue 首参是对象名字符串须加引号如 setValue("s", 4)），两类不要混淆。
 
 **Applet API 设置命令（通过 applet 方法直接调用）：**
 - setCoordSystem(-10, 10, -10, 10)  -- 设置坐标范围
 - setAxesVisible(true, true)  -- 显示/隐藏坐标轴
 - setGridVisible(true)  -- 显示/隐藏网格
-- setColor("对象名", R, G, B)  -- 设置颜色 (0-255)
-- setLineThickness("对象名", 3)  -- 设置线宽
+- setAxisLabels(1, "x", "y", "")  -- 设轴名（第一参数 viewNumber=1，必填）
+- setAxisSteps(1, 1, 1, 1)  -- 设刻度间距为 1（默认 2 不对，必填）
+- setColor("对象名", R, G, B)  -- 设置颜色 (0-255)。**主要几何图形（题目给出的三角形/四边形）的边框必须用深色**（黑色 0,0,0 或深蓝 30,30,180），线宽 >= 3，使视觉主体突出。辅助圆/辅助线用浅灰色（180, 180, 180），避免喧宾夺主。也可用十六进制：SetColor(t1, "#2E86AB")（注意：SetColor 首字母大写用于十六进制参数，setColor 小写用于 RGB 参数，两者是同一命令的不同重载，都可用）。
+- SetConditionToShowObject("对象名", showFlag)  -- 设置显示条件，配合 Boolean 复选框实现可见性开关。例：showX = Boolean(true, "显示X") → SetConditionToShowObject(obj, showX)。
+- setLineThickness("对象名", 3)  -- 设置线宽。主要几何图形的边线宽 >= 3，辅助线线宽 1-2。
 - setLineStyle("对象名", 1)  -- 0=实线, 1=虚线
 - setPointSize("对象名", 5)  -- 设置点大小
 - setPointStyle("对象名", 4)  -- 点样式 (3-8)
 - setLabelVisible("对象名", true)  -- 显示/隐藏标签
 - setCaption("对象名", "LaTeX标签")  -- 设置标签文本
 - setFilling("对象名", 0.3)  -- 设置填充透明度 (0-1)
+- setCoords("对象名", x, y)  -- 移动点到指定坐标（对路径约束点也生效，点仍留在路径上）
+
+【强制结构 (MANDATORY STRUCTURE) — 必须严格遵守】
+生成的 commands 必须按以下顺序与规则组织：
+
+0. **先做依赖分析，再吐命令（两阶段输出）**：输出 commands 之前，先在 JSON 的 dependencyAnalysis 字段列出每个几何对象的约束关系，迫使你先判别"为什么这么构造"再决定"怎么画"。每项形如 {"name":"对象名","type":"约束类型","dependsOn":["依赖对象名"],"origin":"来源类型"}。约束类型取值：
+   - free：自由点/自由参数（题目给定坐标，如位似中心 M=(-3,-1)）
+   - path：路径约束点（题目说点在圆/直线/线段上，用 Point(<路径对象>)：圆 Point(c)、线段 Point(segAF)、直线 Point(l)；dependsOn 含路径对象名）
+   - reflect：反射/对称派生点（如直径对径点 B=Reflect(A,O)、轴对称 A'=Reflect(A,l)）
+   - intersect：交点（P=Intersect(f,g)）
+   - midpoint：中点（M=Midpoint(A,B)）
+   - 其他（circle/line/segment/polygon 等）：按几何对象类型填，dependsOn 列构造它所需的对象。
+   **origin（来源类型）取值**——判别每个对象是题目前提、构造、派生还是目标（见第 5 步判定规则）：
+   - given：题目前提对象（题目陈述既有事实，如"已知/给定/是/位于/属于"或"C 是圆 O 上一点"，必须重建）
+   - constructed：构造对象（题目说"作/连接/过…作/延长/截取/在…上取/任取"等引入动作产生的新对象）
+   - derived：派生对象（由已有对象纯相交/派生得到，如"CD 与 BA 延长线交于 P"中的 P，不引入新关系）
+   - target：题目"求/证明/说明"后的目标对象（不构造，只写进 description）
+   **origin 拓扑一致性**：origin=given 的对象其 dependsOn 不得含 origin=derived/target 的对象（禁止低层来源依赖高层派生的反向边）。允许的依赖方向：given→constructed→derived→target。
+   dependencyAnalysis 是推理脚手架，帮助你在 commands 里按拓扑序排列（被依赖对象先创建、派生对象后创建）。**这一步不可省略**——跳过依赖分析直接吐命令会导致把派生点写成自由点（坐标假装在圆上、拖动就脱离），或用派生点反推前提点（循环论证），违背题意。
+
+1. **view-setup 命令放最前**：setCoordSystem → setAxesVisible → setGridVisible → setAxisLabels(1,"x","y","") → setAxisSteps(1,1,1,1)。后两条**必填**，否则轴名/刻度间距不对。
+
+2. **点创建按约束关系分四类（拓扑序：被依赖先创建）**：
+   - **自由点**用固定坐标：A = (1, 2)、O = (0, 0)。**严禁用 PointIn(...)**（位置随机不可控）；关键点（如位似中心 M）必须用题目给定坐标，如 M = (-3, -1)。
+   - **路径约束点**（题目说某点在圆/直线/线段上时）必须用 Point(<路径对象>)，**不可写死坐标假装在路径上**——写死坐标的点可拖离路径，违背题意。三种路径对象分别示例：
+     - 圆上点：A = Point(c)（c 是已创建的圆对象，可沿圆拖动不脱离圆周），紧跟 setCoords("A", x, y) 固定初始位置（点仍约束在圆上）。
+     - 线段上点：先建线段 segAF = Segment(A, F)，再 P = Point(segAF)（P 约束在线段 AF 上、可沿线段拖动不脱离），紧跟 setCoords("P", x, y) 固定初始位置（点仍约束在线段上）。**题目说"P 是线段 AF 上一点"时必须如此构造**——即便坐标可由答案反推算出，也严禁写成 P = (x, y) 自由点假装在线段上。
+     - 直线上点：先建直线 l = Line(A, B)，再 P = Point(l) + setCoords("P", x, y)。
+     线段/直线对象必须**先于**引用它的 Point() 创建（拓扑序）。
+   - **直径端点对**（题目说 AB 是圆 O 的直径时）：A = Point(c) + setCoords("A", x, y) 固定 A 的初始位置，B = Reflect(A, O) 自动是对径点（B 在圆上、随 A 沿圆拖动自动滑到对侧、AB 始终是直径）。**严禁**把 A 或 B 写死坐标假装在圆上——拖动就脱离圆周、违背题意。圆心 O 优先置于原点简化构造（O=(0,0) 时 Reflect(A,O) 最简）。
+   - **交点/中点/其他派生点**：P = Intersect(f, g)（依赖已创建的 f、g）、M = Midpoint(A, B)（依赖已创建的 A、B）。必须排在被依赖对象之后。
+   - **关系派生点**（题目说某图形是平行四边形/矩形/菱形，或某线是高/中线/角平分线时）必须用约束构造命令派生，**不可写死坐标自由点假装满足关系**——写死坐标的点拖动即破坏平行/垂直关系、违背题意：
+     - 平行四边形第 4 顶点：3 个顶点自由 + 第 4 个 C = Translate(B, Vector(A, D))（B + 向量 AD = C，天然 AB∥CD、AD∥BC；任选 3 个为自由，第 4 个派生）。派生顶点与哪个自由顶点对顶由公式决定：C=Translate(B,Vector(A,D)) 中 C 与 A 对顶（A-B-C-D 循环序），Polygon(A,B,C,D)。
+     - 垂足/高：l_CD = Line(C, D) → F = Intersect(PerpendicularLine(A, l_CD), l_CD)（AF⊥CD 真；题目说"AF 是 CD 边上的高"时 F 必如此构造，不可写死坐标凑视觉垂足）。
+     - 等边三角形：以 AB 为边作等边三角形 → Polygon(A, B, 3)（GeoGebra 原生正多边形构造，第三顶点自动派生、三边等长）。不要拆成 Rotate(B,60°,A)+Polygon。
+     - 等腰三角形：以 AB 为底、AC=BC → l = PerpendicularBisector(A, B) → C = Point(l) + setCoords（C 在中垂线上天然等腰）；给定腰长 r、AC=BC=r → C = Intersect(Circle(A,r), Circle(B,r), 1)。题目把"△ABC 是等腰三角形"作为前提陈述时，不构造 C（A/B/C 皆 given）。
+     - 中线端点用 Midpoint、角平分线用 AngleBisector 等。
+     拖动自由顶点时，关系派生点跟随保持关系不变。被依赖对象（向量、直线、中垂线）必须先于派生点创建（拓扑序）。
+
+3. **变换点直接用撇号命名**：反射/位似/旋转的变换点命名为 A'/B'/C'/M'（撇号是 GeoGebra 合法语法）。**不要**用 A_1 + setCaption 绕路。
+
+4. **所有点创建之后，对每个点和原点追加 setLabelVisible**：setLabelVisible("A", true)、setLabelVisible("M'", true) 等。必须排在所有点创建命令**之后**——对不存在的对象调用是空操作。撇号名用双引号包：setLabelVisible("M'", true)。
+
+5. **区分题目前提与构造目标（信息单向流，防止循环论证）**：
+   (a) **前提/目标识别**：用"求证/证明/求/求作/试求/说明"等关键词**辅助识别证明/求值目标**——目标对象/关系只写进 description，不构造。但**不按关键词位置机械切两段**：关键词之后可能仍有构造性描述（如"求证…，并作 EF 使…"），对象来源以句法语意为准，不靠位置。"若…，求…"从句要拆："若"部分是 **Conditional Given**（追加前提，要在图上落实，如"若 AB=2"要赋值 AB=2），"求"部分才是目标。
+   (b) **对象来源判定**（填入第 0 步 dependencyAnalysis 的 origin 字段）：
+   - 题目说"已知/给定/是/位于/属于"或"C 是圆 O 上一点"（陈述既有事实）→ **given**
+   - 题目说"在…上取/任取/选择一点 C"（引入动作）→ **constructed**（虽约束在路径上，但 origin 是构造）
+   - 题目说"作/连接/过…作/延长/截取/以…为圆心作圆"→ **constructed**（引入题目没提过的新对象/新关系）
+   - 由已有对象**纯相交/派生**得到（如"CD 与 BA 延长线交于 P"）→ **derived**（不引入新关系，只是两已定义对象的几何交点）
+   - 题目说"求/证明/说明"后的对象 → **target**（不构造，只标注）
+   - **constructed vs derived 区分标准**：是否引入了题目没提过的新关系。constructed 引入新动作/新对象；derived 是纯粹两个已定义对象的交点。
+   (c) **信息单向流，禁止反向依赖**：前提点（given/constructed）的位置由前提约束决定；派生点（derived）从前提点导出。**严禁反过来用派生点定义前提点——那是循环论证**。例：题目"ABCD 内接圆 O，CD 与 BA 延长线交于 P"——C 是前提点（given，在圆上），P 是派生点（derived，BA 延长线 ∩ CD）。必须先构造 C，再由 C、D 求 P；不能先定 P 再反推 C。
+   (d) **路径约束点必留路径上**：题目说"点在圆/线/线段上"时，该点必须用 Point(<路径对象>)（圆用 Point(c)、线段用 Point(seg)、直线用 Point(l)）或 Intersect(<路径对象>, <约束线>)（操作数之一是圆/路径对象）。**严禁**用写死坐标自由点假装在路径上——点会脱离路径、违背题意；也**严禁** Intersect(<线>, <线>) 定义内接点——点会脱离圆周。平行/垂直等关系是前提约束，让点在路径上满足约束即可，不要用派生构造把内接点挤出路径。
+     - **线段上点的典型坑**：题目说"P 是线段 AF 上一点"时，AI 常用答案反推坐标写成 P = (x, y) 自由点——坐标虽视觉凑近 AF，但无路径约束、拖动即脱离线段。正确做法：segAF = Segment(A, F) → P = Point(segAF) → setCoords("P", x, y) 固定初始位置（点仍约束在线段上）。
+   - **圆与过圆上已知点 B 的约束直线 l_BC 的"另一交点 C"构造**（如 OD∥BC 下 C 在圆上且 BC∥OD）：**优先用垂足对称法**（不依赖交点索引，规避拖动时索引跳变 C 跳回 B）：
+     l_OD = Line(O, D)  →  l_BC = Line(B, l_OD)  →  perp = PerpendicularLine(O, l_BC)  →  foot = Intersect(l_BC, perp)  →  C = Reflect(B, foot)
+     （几何依据：圆心到弦的垂足平分弦，故 foot 是 B、C 中点，Reflect(B, foot) = C，C 在圆上 + 动态跟随 D 保持 BC∥OD + 天然 C≠B）
+   - 备选 Intersect(c, l_BC, 2)（带索引）有拖动跳变风险（索引 1/2 依赖 GeoGebra 内部实根排序，l_BC 旋转跨越临界位置时 C 可能跳回 B），优先用垂足对称法。
+   - 已知退化区间：当约束使过 B 的直线在 B 点与圆相切时，C 与 B 重合、四边形退化为三角形，这是几何固有边界情况（非 bug）。
+
+6. **依赖自检（吐 commands 前必做）**：在输出 commands 前，对照 dependencyAnalysis 自查 4 件事，命中违例则重新生成：
+   1. 每个 origin=given 的对象，其 dependsOn 是否只含题目前提（不含 derived/target 对象）？
+   2. 每个 origin=derived 的对象，其 dependsOn 是否只依赖已存在的对象？
+   3. 是否存在 derived→given 的反向依赖？（如 C 标 given 却 dependsOn P derived——本案 bug）
+   4. 题目明确要求"在圆/线/线段上"的点，最终构造命令是否仍受该路径约束（Point(圆对象) / Point(线段对象) / Point(直线对象) 或 Intersect(路径对象,…) 或垂足对称法）？写死坐标自由点（如 P = (x, y)）假装在路径上即违例。
+   5. 题目明确要求"是平行四边形/矩形/菱形"的图形，其顶点是否用 Translate/Midpoint 等约束构造派生（3 自由 + 1 派生），而非全写死坐标？题目说"某线是高/中线"时，该线端点是否用垂足（Intersect(PerpendicularLine(...), 边)）/中点构造派生，而非写死坐标凑视觉？写死坐标自由点假装满足平行/垂直关系即违例。
+   6. 题目说"以 AB 为边作等边三角形"时，是否用 Polygon(A, B, 3)（而非拆 Rotate+Polygon 或写死第三点坐标）？题目说"作等腰三角形"时，顶点是否用 PerpendicularBisector+Point(l)（底边给定）或两圆交点（腰长给定）派生，而非写死坐标凑等腰？题目把"△ABC 是等边/等腰三角形"作为前提陈述（非"作"）时，A/B/C 是否都标 given 不构造？
+   第 3、4、5、6 条直接命中历次事故，不可跳过。
 
 【输出格式 (OUTPUT FORMAT)】
 你的响应必须**只有以下 JSON 格式**，不要包含其他任何文字：
 
 如果题目**适合**用 GeoGebra 演示：
-{"suitable": true, "commands": ["命令1", "命令2", "命令3", ...], "description": "简要说明演示内容"}
+{"suitable": true, "dependencyAnalysis": [{"name": "O", "type": "free", "dependsOn": [], "origin": "given"}, {"name": "c", "type": "circle", "dependsOn": ["O"], "origin": "given"}, {"name": "A", "type": "path", "dependsOn": ["c"], "origin": "given"}, {"name": "B", "type": "reflect", "dependsOn": ["A", "O"], "origin": "derived"}, {"name": "C", "type": "path", "dependsOn": ["c", "l_BC"], "origin": "given"}, {"name": "P", "type": "intersect", "dependsOn": ["l_BA", "l_CD"], "origin": "derived"}], "commands": ["setCoordSystem(-6, 6, -6, 6)", "O = (0, 0)", "c = Circle(O, 2)", "A = Point(c)", "setCoords(\"A\", -2, 0)", "B = Reflect(A, O)", "D = Point(c)", "setCoords(\"D\", -1.5, 1.32)", "l_OD = Line(O, D)", "l_BC = Line(B, l_OD)", "perp = PerpendicularLine(O, l_BC)", "foot = Intersect(l_BC, perp)", "C = Reflect(B, foot)", "l_BA = Line(B, A)", "l_CD = Line(C, D)", "P = Intersect(l_BA, l_CD)", "命令..."], "description": "圆内接四边形 + 延长线交点演示：C 是前提点（given，垂足对称法构造在圆上），P 是派生点（derived，从 C、D 导出），信息单向流 C→P"}
+
+线段上点题示例（题目说"P 是线段 AF 上一点"，P 必须约束在线段上而非写死坐标）：
+{"suitable": true, "dependencyAnalysis": [{"name": "A", "type": "free", "dependsOn": [], "origin": "given"}, {"name": "F", "type": "free", "dependsOn": [], "origin": "given"}, {"name": "segAF", "type": "segment", "dependsOn": ["A", "F"], "origin": "constructed"}, {"name": "P", "type": "path", "dependsOn": ["segAF"], "origin": "given"}], "commands": ["setCoordSystem(-2, 2, -2, 2)", "A = (1 - sqrt(3), 0)", "F = (1 - sqrt(3), -1)", "segAF = Segment(A, F)", "P = Point(segAF)", "setCoords(\"P\", 1 - sqrt(3), -1 + sqrt(3)/2)", "setLabelVisible(\"A\", true)", "setLabelVisible(\"F\", true)", "setLabelVisible(\"P\", true)"], "description": "P 是线段 AF 上一点：先建 segAF，P=Point(segAF) 路径约束 + setCoords 固定初始位置，P 可沿线段拖动不脱离"}
+
+平行四边形 + 高题示例（题目说"ABCD 是平行四边形，AF、CE 是高"，4 顶点不可全自由、F/E 不可写死坐标凑垂足）：
+{"suitable": true, "dependencyAnalysis": [{"name": "A", "type": "free", "dependsOn": [], "origin": "given"}, {"name": "B", "type": "free", "dependsOn": [], "origin": "given"}, {"name": "D", "type": "free", "dependsOn": [], "origin": "given"}, {"name": "C", "type": "translate", "dependsOn": ["B", "A", "D"], "origin": "derived"}, {"name": "l_CD", "type": "line", "dependsOn": ["C", "D"], "origin": "constructed"}, {"name": "l_AB", "type": "line", "dependsOn": ["A", "B"], "origin": "constructed"}, {"name": "F", "type": "foot", "dependsOn": ["A", "l_CD"], "origin": "derived"}, {"name": "E", "type": "foot", "dependsOn": ["C", "l_AB"], "origin": "derived"}], "commands": ["setCoordSystem(-1, 3, -1.5, 2.5)", "A = (0, 1)", "B = (1, 1)", "D = (0, 0)", "C = Translate(B, Vector(A, D))", "l_CD = Line(C, D)", "l_AB = Line(A, B)", "F = Intersect(PerpendicularLine(A, l_CD), l_CD)", "E = Intersect(PerpendicularLine(C, l_AB), l_AB)", "polyABCD = Polygon(A, B, C, D)", "segAF = Segment(A, F)", "segCE = Segment(C, E)", "setLabelVisible(\"A\", true)", "setLabelVisible(\"B\", true)", "setLabelVisible(\"C\", true)", "setLabelVisible(\"D\", true)", "setLabelVisible(\"F\", true)", "setLabelVisible(\"E\", true)"], "description": "平行四边形 ABCD：A/B/D 自由、C=Translate(B,Vector(A,D)) 派生保持平行；F=垂足(A→CD)、E=垂足(C→AB) 真高。拖 A/B/D 则 C/F/E 跟随保持平行四边形与垂直关系"}
+
+等边三角形题示例（题目说"以 AB 为边作等边三角形 ABC"，优先 Polygon(A,B,3) 不拆 Rotate）：
+{"suitable": true, "dependencyAnalysis": [{"name": "A", "type": "free", "dependsOn": [], "origin": "given"}, {"name": "B", "type": "free", "dependsOn": [], "origin": "given"}, {"name": "t1", "type": "polygon", "dependsOn": ["A", "B"], "origin": "constructed"}], "commands": ["setCoordSystem(-1, 3, -1, 3)", "A = (0, 0)", "B = (2, 0)", "t1 = Polygon(A, B, 3)", "setLabelVisible(\"A\", true)", "setLabelVisible(\"B\", true)", "setLabelVisible(\"C\", true)"], "description": "以 AB 为边作等边三角形：Polygon(A,B,3) 是 GeoGebra 原生正多边形构造，第三顶点 C 自动派生、三边等长。拖 A/B 则整个三角形跟随保持等边"}
+
+等腰三角形题示例（题目说"以 AB 为底边作等腰三角形 ABC，AC=BC"，C 用中垂线派生不写死坐标）：
+{"suitable": true, "dependencyAnalysis": [{"name": "A", "type": "free", "dependsOn": [], "origin": "given"}, {"name": "B", "type": "free", "dependsOn": [], "origin": "given"}, {"name": "l", "type": "line", "dependsOn": ["A", "B"], "origin": "constructed"}, {"name": "C", "type": "path", "dependsOn": ["l"], "origin": "constructed"}], "commands": ["setCoordSystem(-1, 3, -1, 3)", "A = (0, 0)", "B = (2, 0)", "l = PerpendicularBisector(A, B)", "C = Point(l)", "setCoords(\"C\", 1, 1.5)", "t1 = Polygon(A, B, C)", "setLabelVisible(\"A\", true)", "setLabelVisible(\"B\", true)", "setLabelVisible(\"C\", true)"], "description": "以 AB 为底作等腰三角形：C=Point(中垂线) 天然 AC=BC，可沿中垂线拖动保持等腰。Polygon(A,B,C) 只连线，等腰约束来自 C 在中垂线上"}
 
 如果题目**不适合**用 GeoGebra 演示：
 {"suitable": false, "commands": [], "description": "不适合原因简述"}
@@ -592,7 +720,19 @@ export const DEFAULT_GEOGEBRA_PROMPT = `【角色与核心任务 (ROLE AND CORE 
 5. 确保坐标范围能让所有关键图形和交点清晰可见
 6. description 用简体中文
 7. 如果题目涉及参数讨论（如讨论 a 的取值范围），用滑动条 (Slider) 展示参数变化效果
-8. 对于函数题，应画出函数图像并标注关键点（交点、顶点、渐近线等）`;
+8. 对于函数题，应画出函数图像并标注关键点（交点、顶点、渐近线等）
+9. **命令顺序（拓扑序）**：先输出 dependencyAnalysis（依赖分析），再按拓扑序输出 commands：view-setup 命令 → 创建根对象（圆心/自由点/参数）→ 创建派生对象（圆→圆上点→直径端点对→直线→交点…，每一层只依赖已创建的上一层）→ 设样式(setColor/setPointSize...) → 最后 setLabelVisible。setLabelVisible 必须在所有点创建之后。**被依赖对象必须先于引用对象创建**。
+10. **必填项**：setAxisLabels(1,"x","y","") 和 setAxisSteps(1,1,1,1) 不可省略；每个点和原点都必须有对应的 setLabelVisible。
+11. **直径端点对必用 Point(c)+Reflect**：题目说 AB 是圆 O 的直径时，A 必须用 A = Point(c) + setCoords("A", x, y)（路径约束、可沿圆拖动），B 必须用 B = Reflect(A, O)（对径点、自动在圆上）。**严禁**把 A 或 B 写成自由点坐标（如 A = (-2, 0)）假装在圆上——那样拖动会脱离圆周、违背题意。圆心 O 优先置于原点。B 是派生点只能从 A 端拖动（单向，GeoGebra 固有限制）。
+12. **路径约束点必留路径上**：题目说"点在圆/线/线段上"时，该点必须用 Point(<路径对象>)（圆 Point(c)、线段 Point(segAF)、直线 Point(l)）或 Intersect(<路径对象>, <约束线>)（操作数之一是圆/路径）或垂足对称法（Reflect(B, foot)，等价于与圆求交）。**严禁**用写死坐标自由点（如 P = (x, y)）假装在路径上——即便坐标由答案反推算出，写死坐标的点拖动会脱离路径、违背题意。也**严禁** Intersect(<线>, <线>) 定义内接点——点会脱离圆周、违背"内接"。平行/垂直等关系是前提约束，让点在路径上满足约束即可，不要用派生构造把内接点挤出路径。圆与过圆上已知点的约束直线的"另一交点"优先用垂足对称法（不依赖交点索引，规避拖动跳变）。
+13. **禁止反向依赖（信息单向流）**：派生点（derived，如交点 P）从前提点（given，如内接点 C）导出，不可反过来用派生点定义前提点。允许的依赖方向：given→constructed→derived→target。违反即循环论证——如"ABCD 内接圆 O，CD 与 BA 延长线交于 P"中 C 是前提点（在圆上）、P 是派生点（BA 延长线 ∩ CD），必须先构造 C 再由 C、D 求 P，不能先定 P 再反推 C。
+14. **关系约束必用构造派生，不可写死坐标假装**：题目说"ABCD 是平行四边形"时，4 顶点必须 3 自由 + 1 派生（C = Translate(B, Vector(A, D))，B + 向量 AD = C，天然 AB∥CD、AD∥BC），**严禁 4 顶点全写死坐标**——拖动变任意四边形、违背题意。题目说"AF 是 CD 边上的高"时，F 必须用垂足构造（l_CD = Line(C,D) → F = Intersect(PerpendicularLine(A, l_CD), l_CD)，AF⊥CD 真），**严禁 F 写死坐标凑视觉垂足**——拖动后 AF 不再垂直 CD。这与"把 A 写死坐标假装在圆上""P 写死坐标假装在线段上"同源：写死坐标只能凑初始视觉，拖动即暴露无约束。
+15. **正多边形/等腰三角形按题意选构造，不可写死坐标假装**：题目说"以 AB 为边作等边三角形"时优先 Polygon(A, B, 3)（GeoGebra 原生正多边形构造，第三顶点自动派生、三边等长），**严禁拆成 Rotate+Polygon 或写死第三点坐标**——拆 Rotate 多一条构造链且 ±60° 方向易选错，写死坐标拖动即破坏等边。题目说"以 AB 为底作等腰三角形（AC=BC）"时 C 必须用 PerpendicularBisector(A,B)+Point(l) 派生（C 在中垂线上天然等腰），**严禁 C 写死坐标凑视觉等腰**。题目说"AC=BC=r"时用两圆交点 C=Intersect(Circle(A,r),Circle(B,r),1)。**但**题目把"△ABC 是等边/等腰三角形"作为前提陈述（非"作/构造"）时，A/B/C 都是 given 前提点不构造——是否构造取决于题目是"作"（constructed）还是"是"（given），见第 5 步 origin 判定。
+16. **顶点方位与原图一致**：先判别原图各顶点是题目前提（固定点）还是需构造派生。若 ABC 等是题目前提固定点**且题目未给具体坐标**，推荐用 Slider 参数化边长（如 s = Slider(1, 10, 0.01)），取 B=(0,0)、C=(s,0)（底边水平，**B 在左、C 在右**），A=(s/2, s*sqrt(3)/2)（顶部居中），使三角形可整体缩放并保持等边形状。此范式天然满足逆时针 A→B→C 且底边 BC 水平。**务必核对原图左右顺序**：原图 BC 底边中 B 在左、C 在右，则 B=(0,0)、C=(s,0)；若原图 B 在右、C 在左，则 B=(s,0)、C=(0,0)。不可机械套用模板导致左右镜像。若题目给了具体坐标，按给定坐标写死。**严禁**用 Polygon(A, B, n) 派生固定顶点（会把固定顶点变派生点、标签整体错位）。仅当题目要求"作/构造"正多边形时才用 Polygon(A, B, n)，且须选对基准边使派生顶点落点与自动命名均与原图一致。吐 commands 前自检：①固定顶点是否按原图方位给坐标（Slider 参数化或固定坐标）？②**B 和 C 的左右顺序是否与原图一致**？③派生顶点落点与标签是否均与原图一致？④每个标签是否贴在原图对应方位的那个点上（标签→坐标→原图方位三者一致，非仅空间位置对）？
+19. **共线关系用绿色虚线展示**：若题目存在三点共线关系（如 A/D/E 共线），用绿色虚线连接共线点（setLineStyle + setColor 绿色），并注明"展示共线关系"。吐 commands 前自检：共线关系是否用绿色虚线标出？
+20. **两圆交点取点模式（D 类构造派生点）**：题目涉及"以 A 为圆心、rA 为半径画圆，以 C 为圆心、rC 为半径画圆，两圆交于 D"时，D 的构造必须严格按以下链：
+   cA = Circle(A, rA) → cC = Circle(C, rC) → list = {Intersect(cA, cC)} → D = Element(list, 1)
+   **D 必须用 Element(list, 1) 从交点列表取点，不可写死坐标**（list 赋值须花括号 {Intersect(...)} 收列表，否则 list 非列表、Element 失败）。rA、rC 推荐用 Slider 参数化（如 rA = Slider(1, 6, 0.01, 3)），使交点可动态调整。若 D 之后还有派生点（如 E = Rotate(D, -60°, C)），D 必须先于 E 创建。**典型构造链**：s = Slider(1, 10, 0.01) → B=(0,0) → C=(s,0) → A=(s/2, s*sqrt(3)/2) → rA=Slider(1,6,0.01,3) → rC=Slider(1,5,0.01,2) → cA=Circle(A,rA) → cC=Circle(C,rC) → list={Intersect(cA,cC)} → D=Element(list,1) → E=Rotate(D,-60°,C)。吐 commands 前自检：每个交点派生点是否按"先建圆→求交列表→取点"的链创建？派生点是否排在被依赖对象之后？`;
 
 /**
  * 生成 GeoGebra 分析提示词

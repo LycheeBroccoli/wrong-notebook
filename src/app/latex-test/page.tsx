@@ -32,6 +32,61 @@ export default function LatexTestPage() {
         {
             title: "\\neq 等命令（块级 + 行内混合，回归 4.2 整段崩塌）",
             content: "#### 情况一：当 $a+b+c\\neq0$ 时\n\n因为 $a+b+c \\neq 0$，得：\n\n$$b+c-a = -2a \\neq 0 \\implies a \\neq 0$$\n\n同理 $b \\neq 0$ 且 $c \\neq 0$。"
+        },
+        {
+            title: "证明环境与证毕符号（amsthm 风格）",
+            content: "\\begin{proof}\n这里是证明过程。\n\\qed\n\\end{proof}\n\n行内证毕：$\\qed$，方块：$\\Box$ $\\square$ $\\blacksquare$，带框空位：$\\boxed{\\phantom{x}}$"
+        },
+        // —— ChatGPT 风格分隔符基础用例 ——
+        {
+            title: "ChatGPT 行内 \\( ... \\)",
+            content: "(1) \\(a = -12\\), \\(b = 8\\), \\(c = 16\\) (2) \\(t = 12\\)"
+        },
+        {
+            title: "ChatGPT 块级 \\[ ... \\]",
+            content: "求根公式:\n\n\\[x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\\]"
+        },
+        {
+            title: "ChatGPT 混合（行内+块级）",
+            content: "解:\n\n(1) \\(a = -12, b = 8, c = 16\\)\n\n(2) 当 \\(t = 12\\) 时\n\n(3) \\[M = \\frac{72}{11}\\]"
+        },
+        // —— 甄别安全性边界用例（验证不误伤裸括号/脚注/分式）——
+        {
+            title: "裸[]脚注不应被改",
+            content: "参考[1]文献，见[3]，且 a[0] 不变"
+        },
+        {
+            title: "裸()文本与 ChatGPT 公式混排",
+            content: "(1+2)=3 是普通文本，且 \\(x=1\\) 是公式"
+        },
+        {
+            title: "ChatGPT 行内含分式 \\frac{a}{b}",
+            content: "\\(\\frac{a}{b}\\) 的分母分子花括号应保留"
+        },
+        {
+            title: "ChatGPT 行内含 \\left[ \\right]",
+            content: "\\(\\left[ a + b \\right]\\) 内部方括号应保留"
+        },
+        {
+            title: "ChatGPT 行内含 \\sqrt[3] 可选参数",
+            content: "\\(\\sqrt[3]{x}\\) 的 [3] 应保留"
+        },
+        {
+            title: "ChatGPT 块级含矩阵 bmatrix",
+            content: "\\[\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}\\]"
+        },
+        {
+            title: "Markdown 链接 []() 与公式共存",
+            content: "[链接](url) 与 \\(x\\) 共存，链接不应坏"
+        },
+        {
+            title: "未闭合孤立 \\( 应原样保留",
+            content: "文本 \\(未闭合 不应被改动"
+        },
+        // —— Gemini 与 ChatGPT 混排（同一文档两种风格）——
+        {
+            title: "Gemini $ 与 ChatGPT \\(\\) 混排",
+            content: "\\(a=1\\) 且 $b=2$，块级 \\[c=3\\] 与 $$d=4$$"
         }
     ];
 

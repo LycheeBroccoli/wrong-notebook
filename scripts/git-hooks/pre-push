@@ -1,0 +1,4 @@
+#!/bin/sh
+# stdin is the ref update list provided by Git, never a credential stream.
+HOOK_DIR="$(git rev-parse --git-common-dir)/private-hooks"
+exec python "$HOOK_DIR/check_push_history.py" "$@"

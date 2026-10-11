@@ -713,9 +713,9 @@ export default function ErrorDetailPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="whitespace-pre-wrap">
+                                    <div>
                                         {item.userNotes ? (
-                                            <p className="text-foreground">{item.userNotes}</p>
+                                            <MarkdownRenderer content={item.userNotes} />
                                         ) : (
                                             <p className="text-muted-foreground italic">
                                                 {t.detail.noNotes}
@@ -805,7 +805,7 @@ export default function ErrorDetailPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <MarkdownRenderer content={item.answerText} className="font-semibold" />
+                                    <MarkdownRenderer content={item.answerText} className="font-semibold" highlightBold />
                                 )}
                             </CardContent>
                         </Card>
@@ -848,7 +848,7 @@ export default function ErrorDetailPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <MarkdownRenderer content={item.analysis} />
+                                    <MarkdownRenderer content={item.analysis} highlightBold />
                                 )}
                             </CardContent>
                         </Card>

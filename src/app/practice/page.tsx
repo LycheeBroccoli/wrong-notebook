@@ -329,7 +329,7 @@ function PracticeContent() {
                                     <CardTitle className="text-green-600">{t.practice.correctAnswer}</CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <MarkdownRenderer content={question.answerText} className="font-bold" />
+                                    <MarkdownRenderer content={question.answerText} className="font-bold" highlightBold />
                                 </CardContent>
                             </Card>
 
@@ -339,7 +339,7 @@ function PracticeContent() {
                                     <CardTitle>{t.practice.detailedAnalysis}</CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
-                                    <MarkdownRenderer content={question.analysis} />
+                                    <MarkdownRenderer content={question.analysis} highlightBold />
                                 </CardContent>
                             </Card>
                         </div>

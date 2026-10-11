@@ -69,3 +69,16 @@ upload_test_output*.txt
 # data
 /data/
 .next-prebuilt/
+
+# Local temp/backup directory (db backups, debug scripts, scratch files)
+/tmp/
+
+# Private snapshots and local GeoGebra download cache (kept on disk)
+*.db.bak-*
+*.sqlite.bak-*
+*.bak-segment-fix
+/public/ggb-mirror/
+/backups/
+/certs/
+/2026-07-12-221253-readmemd-ds220.txt
+__pycache__/

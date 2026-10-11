@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock dependencies
 vi.mock('@google/genai', () => {
@@ -45,8 +45,7 @@ describe('GeminiProvider Retry Logic', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        // Use fake timers with auto-advance to avoid manual timer management issues
-        vi.useFakeTimers({ shouldAdvanceTime: true });
+        vi.useFakeTimers();
         provider = new GeminiProvider({ apiKey: 'test-key' });
         // @ts-expect-error - accessing private property for testing
         mockGenerateContent = provider.ai.models.generateContent;
@@ -65,8 +64,9 @@ describe('GeminiProvider Retry Logic', () => {
                 usageMetadata: {}
             });
 
-        // With shouldAdvanceTime: true, fake timers will auto-advance
-        const result = await provider.analyzeImage('base64data');
+        const pending = provider.analyzeImage('base64data');
+        await vi.runAllTimersAsync();
+        const result = await pending;
 
         expect(result).toBeDefined();
         expect(result.questionText).toBe('Q');
@@ -86,16 +86,17 @@ describe('GeminiProvider Retry Logic', () => {
         expect(mockGenerateContent).toHaveBeenCalledTimes(1);
     });
 
-    it('should give up after max retries', async () => {
+    it('should give up after max retries', { timeout: 30000 }, async () => {
         mockGenerateContent.mockRejectedValue(new Error('fetch failed'));
 
-        // With shouldAdvanceTime: true, fake timers will auto-advance through all retries
-        await expect(provider.analyzeImage('base64data'))
+        const assertion = expect(provider.analyzeImage('base64data'))
             .rejects
             .toThrow('AI_CONNECTION_FAILED');
+        await vi.runAllTimersAsync();
+        await assertion;
 
-        // 3 attempts total (1 initial + 2 retries)
-        expect(mockGenerateContent).toHaveBeenCalledTimes(3);
+        // 5 attempts total (1 initial + 4 retries)
+        expect(mockGenerateContent).toHaveBeenCalledTimes(5);
     });
 
     it('should retry on 503 service unavailable', async () => {
@@ -106,7 +107,9 @@ describe('GeminiProvider Retry Logic', () => {
                 usageMetadata: {}
             });
 
-        const result = await provider.analyzeImage('base64data');
+        const pending = provider.analyzeImage('base64data');
+        await vi.runAllTimersAsync();
+        const result = await pending;
 
         expect(result).toBeDefined();
         expect(mockGenerateContent).toHaveBeenCalledTimes(2);
@@ -120,9 +123,28 @@ describe('GeminiProvider Retry Logic', () => {
                 usageMetadata: {}
             });
 
-        const result = await provider.analyzeImage('base64data');
+        const pending = provider.analyzeImage('base64data');
+        await vi.runAllTimersAsync();
+        const result = await pending;
 
         expect(result).toBeDefined();
         expect(mockGenerateContent).toHaveBeenCalledTimes(2);
+    });
+
+    it('waits 10, 20, 40 and 60 seconds before overload retries', async () => {
+        const operation = vi.fn().mockRejectedValue(new Error('503 high demand'));
+        const retryProvider = provider as unknown as {
+            retryOperation: (operation: () => Promise<unknown>) => Promise<unknown>;
+        };
+        const assertion = expect(retryProvider.retryOperation(operation)).rejects.toThrow('503 high demand');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(operation).toHaveBeenCalledTimes(1);
+        for (const [index, delay] of [10_000, 20_000, 40_000, 60_000].entries()) {
+            await vi.advanceTimersByTimeAsync(delay - 1);
+            expect(operation).toHaveBeenCalledTimes(index + 1);
+            await vi.advanceTimersByTimeAsync(1);
+            expect(operation).toHaveBeenCalledTimes(index + 2);
+        }
+        await assertion;
     });
 });

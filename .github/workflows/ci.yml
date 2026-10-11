@@ -33,6 +33,14 @@ jobs:
       - name: Run unit tests
         run: npm run test:unit
 
+      - name: Setup Python for private backup regression tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify SQLite backup and restore safety
+        run: python scripts/test_backup_data.py
+
   integration-test:
     runs-on: ubuntu-latest
     name: Integration Tests

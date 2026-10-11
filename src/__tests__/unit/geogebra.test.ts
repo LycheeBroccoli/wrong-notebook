@@ -48,7 +48,7 @@ function parseApiArgs(cmd: string): { m: string; a: unknown[] } | null {
 
 // Test isApiCall function logic
 const API_PREFIXES = [
-    "setcoordsystem", "setaxesvisible", "setgridvisible", "setcolor",
+    "setcoordsystem", "setcoords", "setaxesvisible", "setgridvisible", "setcolor",
     "setlinethickness", "setlinestyle", "setpointsize", "setpointstyle",
     "setlabelvisible", "setcaption", "setvisible", "setfilling",
     "setvalue", "setfixed", "setbackgroundcolor",
@@ -147,20 +147,170 @@ describe('GeoGebra Commands', () => {
             expect(isApiCall('SETCOORDSYSTEM(-10, 10, -10, 10)')).toBe(true);
             expect(isApiCall('SetAxesVisible(true, true)')).toBe(true);
         });
+
+        // Regression: setCoords (path-constrained point placement) must route to
+        // the JS API path (api.setCoords), NOT fall through to evalCommand where
+        // GeoGebra's command DSL rejects lowercase 'setCoords' as "未知的指令".
+        // The AI emits 'setCoords' (lowercase s) per the prompt, matching the JS
+        // API method name. Prefix match is case-insensitive so all casings route.
+        it('should route setCoords as an API call (not evalCommand)', () => {
+            expect(isApiCall('setCoords("A", 1, 2)')).toBe(true);
+            expect(isApiCall('SetCoords("A", 1, 2)')).toBe(true);
+            expect(isApiCall('SETCOORDS("A", 1, 2)')).toBe(true);
+        });
+
+        it('should not mis-route setCoordSystem as setCoords', () => {
+            // setCoordSystem must still match setCoordSystem, not get shadowed
+            expect(isApiCall('setCoordSystem(-10, 10, -10, 10)')).toBe(true);
+            // And parseApiArgs must extract the full method name, not truncate
+            expect(parseApiArgs('setCoordSystem(-10, 10, -10, 10)')?.m).toBe('setCoordSystem');
+            expect(parseApiArgs('setCoords("A", 1, 2)')?.m).toBe('setCoords');
+        });
+    });
+
+    // Mirrors shouldEvalInsteadOfApi in geogebra-demo.tsx. setCoords/setValue 的
+    // 坐标/值参数含变量时，JS API 不求值表达式字符串 → 改走 evalCommand（DSL 求值）。
+    function findTopLevelCommaInArgs(s: string): number {
+        let depth = 0;
+        let inStr: string | null = null;
+        for (let i = 0; i < s.length; i++) {
+            const ch = s[i];
+            if (inStr) {
+                if (ch === inStr && s[i - 1] !== '\\') inStr = null;
+                continue;
+            }
+            if (ch === '"' || ch === "'") { inStr = ch; continue; }
+            if (ch === '{' || ch === '[') { depth++; continue; }
+            if (ch === '}' || ch === ']') { depth--; continue; }
+            if (ch === ',' && depth === 0) return i;
+        }
+        return -1;
+    }
+    function splitTopLevelCommas(s: string): string[] {
+        const parts: string[] = [];
+        let depth = 0;
+        let inStr: string | null = null;
+        let cur = '';
+        for (let i = 0; i < s.length; i++) {
+            const ch = s[i];
+            if (inStr) { cur += ch; if (ch === inStr && s[i - 1] !== '\\') inStr = null; continue; }
+            if (ch === '"' || ch === "'") { inStr = ch; cur += ch; continue; }
+            if (ch === '{' || ch === '[') { depth++; cur += ch; continue; }
+            if (ch === '}' || ch === ']') { depth--; cur += ch; continue; }
+            if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; continue; }
+            cur += ch;
+        }
+        if (cur.trim()) parts.push(cur);
+        return parts;
+    }
+    function shouldEvalInsteadOfApi(cmd: string): boolean {
+        const m = cmd.trim().match(/^(setCoords|setValue)\s*\(([\s\S]+)\)$/i);
+        if (!m) return false;
+        const argsStr = m[2];
+        const firstComma = findTopLevelCommaInArgs(argsStr);
+        if (firstComma === -1) return false;
+        const rest = argsStr.substring(firstComma + 1);
+        const parts = splitTopLevelCommas(rest);
+        return parts.some((p) => {
+            const t = p.trim();
+            if (/^-?\d+(\.\d+)?$/.test(t)) return false;
+            if (t === 'true' || t === 'false') return false;
+            if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) return false;
+            return true;
+        });
+    }
+
+    describe('shouldEvalInsteadOfApi (setCoords/setValue with variable args)', () => {
+        // 含变量的坐标表达式必须走 evalCommand（DSL 求值），否则 JS API 收到
+        // 字符串 "s / 2" 不求值，点不移动。
+        it('should route setCoords with variable expression to evalCommand', () => {
+            expect(shouldEvalInsteadOfApi('setCoords("D", s / 2, -s * sqrt(3) / 6)')).toBe(true);
+            expect(shouldEvalInsteadOfApi('setCoords("D", x(A), y(B))')).toBe(true);
+            expect(shouldEvalInsteadOfApi('setCoords("D", s / 2, -1.1547)')).toBe(true);
+        });
+
+        // 纯数值 setCoords 仍走 JS API（行为不变，回归保护）
+        it('should keep numeric setCoords on JS API path', () => {
+            expect(shouldEvalInsteadOfApi('setCoords("D", 2, -1.1547)')).toBe(false);
+            expect(shouldEvalInsteadOfApi('setCoords("A", 0, 0)')).toBe(false);
+            expect(shouldEvalInsteadOfApi('SetCoords("A", 1, 2)')).toBe(false);
+        });
+
+        it('should handle setValue with variable expression', () => {
+            expect(shouldEvalInsteadOfApi('setValue("s", 4)')).toBe(false);
+            expect(shouldEvalInsteadOfApi('setValue("t", s + 1)')).toBe(true);
+        });
+
+        it('should not affect non-setCoords/setValue API calls', () => {
+            expect(shouldEvalInsteadOfApi('setColor("A", 255, 0, 0)')).toBe(false);
+            expect(shouldEvalInsteadOfApi('setCoordSystem(-10, 10, -10, 10)')).toBe(false);
+            expect(shouldEvalInsteadOfApi('setLabelVisible("A", true)')).toBe(false);
+        });
     });
 
     describe('Command Safety', () => {
-        it('should reject commands with HTML-like characters', () => {
-            // This tests the safety check we added in runCommands
+        // Mirrors the filter in geogebra-demo.tsx runCommands.
+        // GeoGebra's evalCommand parses the math DSL, NOT HTML/JS, so < > are
+        // legal comparison operators (>=, <=, <, >) inside If(...) etc.
+        // We block only HTML-tag-shaped patterns (</?tag) for defense-in-depth.
+        // Apostrophe (A'/B'/M' transform points) and double-quote (Text("..."))
+        // are also legal DSL syntax and must NOT be blocked.
+        // Regression: If(Length(listD) >= 1, Element(listD, 1), (0,0)) was being
+        // blocked by a naive /[<>]/ test, leaving point D undefined and
+        // cascading E = Rotate(D,...) into "未定义变量 D、E".
+        const isBlocked = (cmd: string) => /<\/?[a-zA-Z][\w\-]*[\s>]/.test(cmd) || /<\/[a-zA-Z]/.test(cmd);
+
+        it('should reject commands with HTML-like angle brackets', () => {
             const unsafeCommands = [
                 '<script>alert("xss")</script>',
                 'f(x) = <img src=x>',
-                "A = (1, 2)' onclick='alert(1)"
+                '<svg onload=alert(1)>',
             ];
 
             for (const cmd of unsafeCommands) {
-                // Our safety check: /[<>'"]/.test(cmd)
-                expect(/[<>'"]/.test(cmd)).toBe(true);
+                expect(isBlocked(cmd)).toBe(true);
+            }
+        });
+
+        it('should allow comparison operators in If/Length commands (>=, <=, <, >)', () => {
+            // Regression for the D/E/listD undefined bug: the If guard uses >=
+            // which a naive /[<>]/ filter blocked, so D was never created.
+            const comparisonCommands = [
+                'D = If(Length(listD) >= 1, Element(listD, 1), (0, 0))',
+                'P = If(a < b, A, B)',
+                'Q = If(x >= 0, (1, 2), (3, 4))',
+                'R = If(Length(L) <= 2, Element(L, 1), (NaN, NaN))',
+                'm = Max(a, b)',
+            ];
+
+            for (const cmd of comparisonCommands) {
+                expect(isBlocked(cmd)).toBe(false);
+            }
+        });
+
+        it('should allow apostrophe transform-point commands', () => {
+            const transformCommands = [
+                "A' = Dilate(A, -0.5, O)",
+                "B' = Dilate(B, -0.5, O)",
+                "t2 = Polygon(A', B', C')",
+                "l1 = Line(A, A')",
+                "M' = Dilate(M, -0.5, O)",
+                "l4 = Segment(M, M')",
+            ];
+
+            for (const cmd of transformCommands) {
+                expect(isBlocked(cmd)).toBe(false);
+            }
+        });
+
+        it('should allow double-quote text commands', () => {
+            const textCommands = [
+                'Text("提示", (1, 2))',
+                'SetCaption("A撇")',
+            ];
+
+            for (const cmd of textCommands) {
+                expect(isBlocked(cmd)).toBe(false);
             }
         });
 
@@ -174,7 +324,7 @@ describe('GeoGebra Commands', () => {
             ];
 
             for (const cmd of safeCommands) {
-                expect(/[<>'"]/.test(cmd)).toBe(false);
+                expect(isBlocked(cmd)).toBe(false);
             }
         });
     });
